@@ -47,7 +47,6 @@ def record(name, fn):
 async def main() -> int:
     config = AgentConfig(
         view=ViewConfig(
-            tunnel_name="test",
             hostname="test.example.com",
             local_port=PORT,
             target_fps=10,

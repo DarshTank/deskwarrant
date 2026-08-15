@@ -35,7 +35,8 @@ export async function POST(
 
     if (!device.tunnelHostname) {
       return badRequest(
-        "This PC has no tunnel hostname yet. Complete the one-time cloudflared setup and let the agent poll once.",
+        device.tunnelError ??
+          "Live view is not set up for this PC yet. Revoke it and pair it again.",
       );
     }
 

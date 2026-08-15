@@ -8,6 +8,42 @@ import { describeToolCall, toGroqTools, validateToolCall } from "./tools";
 
 /** Build plan §9: hard ceiling on tool round trips per turn. */
 const MAX_ITERATIONS = 4;
+
+/**
+ * True for Groq's 400 `tool_use_failed`, raised when the model emits a
+ * malformed tool call rather than a structured one. It says nothing about
+ * credentials or configuration — it is a bad roll of the dice, and retrying
+ * the same request usually succeeds.
+ */
+function isToolUseFailure(err: unknown): boolean {
+  const body = (err as { error?: { error?: { code?: string } } })?.error?.error;
+  return body?.code === "tool_use_failed";
+}
+
+/**
+ * Turn a model failure into something the user can act on.
+ *
+ * Blaming GROQ_API_KEY for every failure sends people to check a key that was
+ * never the problem, so the credential message is reserved for actual auth
+ * errors.
+ */
+function describeModelError(err: unknown): string {
+  const status = (err as { status?: number })?.status;
+
+  if (status === 401 || status === 403) {
+    return "The assistant could not authenticate. Check that GROQ_API_KEY is set correctly.";
+  }
+  if (status === 404) {
+    return "That model is not available on this account. Check GROQ_MODEL against console.groq.com/docs/models.";
+  }
+  if (status === 429) {
+    return "The assistant is rate limited right now. Wait a moment and try again.";
+  }
+  if (isToolUseFailure(err)) {
+    return "The model kept returning a malformed tool call. Try asking again, or rephrase the question.";
+  }
+  return "The assistant is unavailable right now. See the server logs for details.";
+}
 /** How long a dispatched job may take before we give up on it. */
 const JOB_TIMEOUT_MS = 20_000;
 const JOB_POLL_INTERVAL_MS = 500;
@@ -303,6 +339,47 @@ export async function runAssistantTurn(opts: RunTurnOptions): Promise<void> {
     osVersion: device.osVersion,
   });
 
+  /**
+   * One model call, retrying a malformed tool call.
+   *
+   * Groq rejects a turn with 400 `tool_use_failed` when the model emits its
+   * pseudo-syntax (`<function=name {...}></function>`) instead of a structured
+   * tool call. It is stochastic — the same prompt usually succeeds on a second
+   * attempt — so a retry costs one round trip and saves the whole turn. The
+   * last attempt drops tools entirely: a plain text answer beats an error.
+   */
+  async function callModel({
+    messages,
+    withTools,
+  }: {
+    messages: Parameters<typeof groq.chat.completions.create>[0]["messages"];
+    withTools: boolean;
+  }) {
+    const attempts = withTools ? 3 : 1;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const useTools = withTools && attempt < attempts - 1;
+      try {
+        return await groq.chat.completions.create({
+          model: groqModel(),
+          messages,
+          ...(useTools ? { tools, tool_choice: "auto" as const } : {}),
+          temperature: 0.2,
+          max_tokens: 1024,
+        });
+      } catch (err) {
+        lastError = err;
+        if (!isToolUseFailure(err)) throw err;
+        console.warn(
+          `[assistant] malformed tool call from the model (attempt ${attempt + 1}/${attempts})`,
+        );
+      }
+    }
+
+    throw lastError;
+  }
+
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     if (opts.signal?.aborted) return;
 
@@ -313,22 +390,15 @@ export async function runAssistantTurn(opts: RunTurnOptions): Promise<void> {
 
     let completion;
     try {
-      completion = await groq.chat.completions.create({
-        model: groqModel(),
+      completion = await callModel({
         messages: [{ role: "system", content: system }, ...history],
         // Build plan §9.5: on the final iteration force a text answer so the
         // turn cannot end with an unanswered tool call.
-        ...(isFinalIteration ? {} : { tools, tool_choice: "auto" as const }),
-        temperature: 0.2,
-        max_tokens: 1024,
+        withTools: !isFinalIteration,
       });
     } catch (err) {
       console.error("[assistant] groq call failed", err);
-      emit({
-        type: "error",
-        message:
-          "The assistant is unavailable right now. Check that GROQ_API_KEY is set correctly.",
-      });
+      emit({ type: "error", message: describeModelError(err) });
       emit({ type: "done" });
       return;
     }

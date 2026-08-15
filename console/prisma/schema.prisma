@@ -88,11 +88,16 @@ model Device {
   pairedAt      DateTime     @default(now())
   revokedAt     DateTime?
 
-  // Cloudflare Tunnel identity. Provisioned manually per device (§8) and
-  // reported by the agent on poll — the console never mints these itself,
-  // which is why no Cloudflare API token has to live on the PC.
-  tunnelHostname String?
-  tunnelName     String?
+  // Cloudflare Tunnel identity, provisioned by the console through the
+  // Cloudflare API when the device pairs. The API token stays server-side; the
+  // PC only ever receives a token scoped to its own single tunnel, which
+  // cannot touch DNS or any other device's tunnel.
+  tunnelId       String? @unique
+  tunnelHostname String? @unique
+  /// Encrypted, not hashed: unlike the device token, the agent has to receive
+  /// this value back, so it cannot be one-way.
+  tunnelTokenEnc String?
+  tunnelError    String?
 
   jobs          Job[]
   conversations Conversation[]

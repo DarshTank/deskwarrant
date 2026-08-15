@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isDeviceOnline, requireOwnedDevice, requireUser } from "@/lib/api-auth";
+import { deprovisionTunnel } from "@/lib/cloudflare";
 import { prisma } from "@/lib/db";
 import { handleRoute, json, parseBody } from "@/lib/http";
 
@@ -93,6 +94,18 @@ export async function DELETE(
         data: { endedAt: new Date(), tunnelState: "STOPPED" },
       }),
     ]);
+
+    // Tear down the Cloudflare side so the hostname stops resolving and the
+    // account does not accumulate dead tunnels. Best effort by design: the
+    // user must be able to revoke a PC even if Cloudflare is unreachable.
+    await deprovisionTunnel({
+      tunnelId: device.tunnelId,
+      hostname: device.tunnelHostname,
+    });
+    await prisma.device.update({
+      where: { id: device.id },
+      data: { tunnelId: null, tunnelHostname: null, tunnelTokenEnc: null },
+    });
 
     return json({ ok: true });
   });

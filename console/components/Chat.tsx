@@ -147,7 +147,13 @@ export function Chat({
         const res = await fetch(`/api/devices/${deviceId}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...body, conversationId }),
+          // Omit conversationId rather than sending null. The route accepts
+          // `conversationId?: string`, and Zod's .optional() rejects null —
+          // so a first message, when no conversation exists yet, would 400.
+          body: JSON.stringify({
+            ...body,
+            ...(conversationId ? { conversationId } : {}),
+          }),
           signal: controller.signal,
         });
 

@@ -1,6 +1,12 @@
 import { z } from "zod";
+import {
+  isTunnelProvisioningEnabled,
+  provisionTunnel,
+} from "@/lib/cloudflare";
+import { encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { badRequest, handleRoute, json, parseBody } from "@/lib/http";
+import { assertDeviceQuota } from "@/lib/rate-limit";
 import {
   generateDeviceToken,
   hashToken,
@@ -35,6 +41,8 @@ export async function POST(req: Request) {
       return badRequest("That pairing code is invalid or has expired.");
     }
 
+    await assertDeviceQuota(pairing.userId);
+
     const deviceToken = generateDeviceToken();
 
     const device = await prisma.$transaction(async (tx) => {
@@ -62,6 +70,34 @@ export async function POST(req: Request) {
 
     if (!device) {
       return badRequest("That pairing code has already been used.");
+    }
+
+    // Provision the device's tunnel and hostname. Deliberately after the
+    // device row exists and outside the transaction: a Cloudflare outage must
+    // not cost the user their pairing. Ask, Act, and Watch work regardless —
+    // only live view needs the tunnel, and it can be provisioned later.
+    if (isTunnelProvisioningEnabled()) {
+      try {
+        const tunnel = await provisionTunnel(device.id);
+        await prisma.device.update({
+          where: { id: device.id },
+          data: {
+            tunnelId: tunnel.tunnelId,
+            tunnelHostname: tunnel.hostname,
+            tunnelTokenEnc: encryptSecret(tunnel.token),
+            tunnelError: null,
+          },
+        });
+      } catch (err) {
+        console.error("[pair] tunnel provisioning failed", err);
+        await prisma.device.update({
+          where: { id: device.id },
+          data: {
+            tunnelError:
+              "Live view could not be set up for this PC. Try revoking and pairing it again.",
+          },
+        });
+      }
     }
 
     return json({ deviceId: device.id, deviceToken });

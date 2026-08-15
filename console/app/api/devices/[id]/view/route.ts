@@ -31,9 +31,10 @@ export async function GET(
       tunnelState: active ? session?.tunnelState : "STOPPED",
       tunnelError: active ? session?.tunnelError : null,
       tunnelHostname: device.tunnelHostname,
-      // False before the one-time cloudflared setup has been recorded, which is
-      // the difference between "starting up" and "will never work".
+      // False when provisioning failed at pairing — the difference between
+      // "starting up" and "will never work without re-pairing".
       tunnelConfigured: Boolean(device.tunnelHostname),
+      provisionError: device.tunnelError,
       deviceOnline: isDeviceOnline(device.lastSeenAt),
     });
   });

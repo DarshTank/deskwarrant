@@ -111,26 +111,35 @@ class Agent:
 
     # ---------- live view ----------
 
-    async def _sync_view(self, active: bool, session_id: str | None) -> None:
+    async def _sync_view(self, poll: Any) -> None:
         """Match the local live-view stack to the console's session state.
 
         Called every poll, so both directions must be cheap when already in the
         requested state.
         """
-        if not active:
+        if not poll.view_active:
             await self._stop_view()
             return
 
         # A new session id means a different browser session, even if we never
         # observed the gap between them. Forget what was reported so the fresh
         # session hears the tunnel's state instead of waiting on a stale row.
-        if session_id != self._view_session_id:
-            self._view_session_id = session_id
+        if poll.view_session_id != self._view_session_id:
+            self._view_session_id = poll.view_session_id
             self._reported_tunnel_state = None
 
-        await self._start_view()
+        # The console provisioned this tunnel and owns its ingress, so it is
+        # authoritative for the port the local server must bind.
+        if poll.view_local_port:
+            self.config.view.local_port = poll.view_local_port
+        if poll.tunnel_hostname:
+            self.config.view.hostname = poll.tunnel_hostname
 
-    async def _start_view(self) -> None:
+        await self._start_view(poll.tunnel_token, poll.tunnel_hostname)
+
+    async def _start_view(
+        self, tunnel_token: str | None, tunnel_hostname: str | None
+    ) -> None:
         # Imported lazily: aiohttp, mss, and Pillow are only needed once a
         # browser actually asks to watch.
         if self._view_server is None:
@@ -151,6 +160,7 @@ class Agent:
             )
             return
 
+        self._tunnel.set_credentials(tunnel_token, tunnel_hostname)
         await self._tunnel.ensure_started()
         await self._tunnel.supervise()
         await self._report_tunnel_state(
@@ -193,14 +203,7 @@ class Agent:
             return
         self._reported_tunnel_state = state
         try:
-            await self.transport.post_view_state(
-                state,
-                tunnel_error=error,
-                # Sent every time: this is how the console learns the device's
-                # hostname after the one-time cloudflared setup (§8).
-                tunnel_hostname=self.config.view.hostname or None,
-                tunnel_name=self.config.view.tunnel_name or None,
-            )
+            await self.transport.post_view_state(state, tunnel_error=error)
         except TransportError as exc:
             # A lost status update self-corrects on the next transition; the
             # browser will meanwhile see the session time out.
@@ -250,7 +253,7 @@ class Agent:
                 self.evaluator.set_rules(poll.watch_rules)
             self.config_version = poll.config_version
 
-            await self._sync_view(poll.view_active, poll.view_session_id)
+            await self._sync_view(poll)
 
             did_work = False
             if poll.jobs:

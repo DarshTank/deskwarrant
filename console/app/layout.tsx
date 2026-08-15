@@ -34,7 +34,14 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      {/*
+        h-full + overflow-hidden, not min-h-full: the shell is exactly one
+        viewport tall, so the `flex-1 min-h-0` panes inside it (chat transcript,
+        live canvas, event feed) scroll within their own frames instead of
+        stretching the page. With a minimum height the chat grew without bound
+        and took the whole window scrollbar with it.
+      */}
+      <body className="flex h-full flex-col overflow-hidden bg-background text-foreground">
         {children}
       </body>
     </html>

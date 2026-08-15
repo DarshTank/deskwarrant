@@ -33,3 +33,6 @@ agent/*.log
 Thumbs.db
 Desktop.ini
 *.swp
+
+# --- dev server capture (see CHECKPOINTS.md) ---
+console/dev-*.log

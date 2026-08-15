@@ -55,7 +55,8 @@ def resolve_binary() -> str | None:
     """Locate `cloudflared`.
 
     Checked in order: an explicit override, the directory the agent was frozen
-    into (PyInstaller bundles the binary alongside the exe), then PATH.
+    into (PyInstaller bundles the binary alongside the exe), PATH, then the
+    standard Windows install locations.
     """
     override = os.environ.get("DESKWARRANT_CLOUDFLARED")
     if override and Path(override).is_file():
@@ -76,7 +77,26 @@ def resolve_binary() -> str | None:
         if candidate.is_file():
             return str(candidate)
 
-    return shutil.which("cloudflared")
+    found = shutil.which("cloudflared")
+    if found:
+        return found
+
+    # The winget/MSI install puts cloudflared here and adds it to the MACHINE
+    # PATH -- but a shell opened before the install still carries the old PATH,
+    # so which() misses a perfectly good binary. Check the known locations
+    # directly rather than making the user restart their terminal.
+    for program_files in (
+        os.environ.get("ProgramFiles(x86)"),
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramW6432"),
+    ):
+        if not program_files:
+            continue
+        candidate = Path(program_files) / "cloudflared" / "cloudflared.exe"
+        if candidate.is_file():
+            return str(candidate)
+
+    return None
 
 
 class TunnelSupervisor:
@@ -94,6 +114,25 @@ class TunnelSupervisor:
         self._error: str | None = None
         self._starting: asyncio.Task[None] | None = None
         self._restarted_once = False
+        self._token: str | None = None
+        self._hostname: str | None = None
+
+    def set_credentials(self, token: str | None, hostname: str | None) -> None:
+        """Adopt the tunnel the console provisioned for this device.
+
+        Both arrive on the poll. Nothing is stored on disk: the token is a live
+        credential, and the console re-sends it whenever a session starts.
+        """
+        self._token = token
+        self._hostname = hostname
+
+    @property
+    def hostname(self) -> str | None:
+        return self._hostname or (self._config.hostname or None)
+
+    @property
+    def configured(self) -> bool:
+        return bool(self._token and self.hostname)
 
     # ---------- observable state ----------
 
@@ -171,10 +210,10 @@ class TunnelSupervisor:
         self._state = TunnelState.STARTING
         self._error = None
 
-        if not self._config.configured:
+        if not self.configured:
             self._fail(
-                "No tunnel configured for this PC. Run the one-time cloudflared "
-                "setup and put tunnelName and hostname in config.json."
+                "Live view is not set up for this PC yet. Revoke it in the "
+                "console and pair it again."
             )
             return
 
@@ -188,17 +227,20 @@ class TunnelSupervisor:
 
         self._terminate()  # never leave an orphan behind
 
+        # Token-run: the tunnel and its ingress rules are defined in Cloudflare,
+        # provisioned by the console. Nothing local is needed -- no cert.pem, no
+        # credentials file, no config.yml, and no `cloudflared tunnel login`.
         command = [
             binary,
             "tunnel",
             "--no-autoupdate",
             "run",
-            self._config.tunnel_name,
+            "--token",
+            self._token or "",
         ]
         log.info(
-            "Starting tunnel '%s' -> %s%s",
-            self._config.tunnel_name,
-            self._config.hostname,
+            "Starting tunnel -> %s%s",
+            self.hostname,
             " (restart)" if is_restart else "",
         )
 
@@ -226,7 +268,7 @@ class TunnelSupervisor:
 
         self._state = TunnelState.UP
         self._error = None
-        log.info("Tunnel is up at https://%s", self._config.hostname)
+        log.info("Tunnel is up at https://%s", self.hostname)
 
     async def _await_health(self) -> None:
         """Poll /health THROUGH the public hostname until it answers.
@@ -237,7 +279,7 @@ class TunnelSupervisor:
         is about to depend on.
         """
         deadline = time.monotonic() + STARTUP_TIMEOUT_S
-        url = self._config.health_url
+        url = f"https://{self.hostname}/health"
         last_detail = "no response"
 
         async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT_S) as client:

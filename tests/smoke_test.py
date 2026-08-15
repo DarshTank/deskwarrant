@@ -414,30 +414,31 @@ print("=" * 70)
 def test_config():
     from config import ViewConfig
     c = AgentConfig(console_url="https://x.vercel.app/", poll_interval_ms=2000,
-                    view=ViewConfig(tunnel_name="deskwarrant-test-pc",
-                                    hostname="pc-7f2a.example.com",
+                    view=ViewConfig(hostname="pc-7f2a.example.com",
                                     local_port=47821, tile_size=128,
                                     target_fps=10, webp_quality=70))
     d = c.view.to_dict()
-    assert d == {"tunnelName": "deskwarrant-test-pc",
-                 "hostname": "pc-7f2a.example.com", "localPort": 47821,
+    assert d == {"hostname": "pc-7f2a.example.com", "localPort": 47821,
                  "tileSize": 128, "targetFps": 10, "webpQuality": 70}
     assert ViewConfig.from_dict(d).tile_size == 128
-    assert c.view.configured
-    assert c.view.health_url == "https://pc-7f2a.example.com/health"
-    PASSES.append("view config round trip matches the migration §7 JSON shape")
-
-    # An unconfigured device must be detectable before a tunnel is attempted.
-    assert not ViewConfig().configured
-    PASSES.append("view config reports unconfigured when the tunnel is unset")
+    assert c.view.local_health_url == "http://127.0.0.1:47821/health"
+    PASSES.append("view config round trip matches the JSON shape")
 
     # The pre-tunnel "capture" block carried these same three keys, so an
     # upgraded install keeps its tuning instead of silently resetting.
     legacy = ViewConfig.from_dict({"tileSize": 64, "targetFps": 5,
                                    "webpQuality": 40})
     assert (legacy.tile_size, legacy.target_fps, legacy.webp_quality) == (64, 5, 40)
-    assert not legacy.configured
     PASSES.append("legacy capture settings still parse into ViewConfig")
+
+    # The tunnel is provisioned by the console: credentials arrive on the poll,
+    # so a fresh agent must report "not configured" until they do.
+    from server.tunnel import TunnelSupervisor
+    sup = TunnelSupervisor(ViewConfig())
+    assert not sup.configured
+    sup.set_credentials("tok-abc", "pc-7f2a.example.com")
+    assert sup.configured and sup.hostname == "pc-7f2a.example.com"
+    PASSES.append("tunnel supervisor adopts console-provisioned credentials")
 
 
 check("config", test_config)

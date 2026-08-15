@@ -18,6 +18,13 @@ export const LIMITS = {
   eventsPerMinute: 30,
   /** View tokens issued for one device, per minute (migration §10). */
   viewTokensPerMinute: 12,
+
+  // ---- Per-user caps. The app is open to sign-up and every chat turn runs on
+  // the operator's Groq key, so one account must not be able to drain it.
+  /** Assistant messages one user may send per day, across all their devices. */
+  messagesPerUserPerDay: 200,
+  /** Devices one user may have paired at once. Also caps tunnel provisioning. */
+  devicesPerUser: 5,
 } as const;
 
 export async function assertJobQuota(deviceId: string, incoming: number) {
@@ -43,6 +50,45 @@ export async function assertEventQuota(deviceId: string, incoming: number) {
     throw new HttpError(
       tooManyRequests(
         `Event rate limit reached for this device (${LIMITS.eventsPerMinute}/min).`,
+      ),
+    );
+  }
+}
+
+/**
+ * Cap assistant usage per user per day.
+ *
+ * Counted from the user's own messages rather than jobs or tokens: it is the
+ * unit the user actually controls, and every one of them costs a Groq call.
+ * The window is a rolling 24h, so there is no midnight cliff.
+ */
+export async function assertUserMessageQuota(userId: string) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const used = await prisma.message.count({
+    where: {
+      role: "USER",
+      createdAt: { gte: since },
+      conversation: { device: { userId } },
+    },
+  });
+  if (used >= LIMITS.messagesPerUserPerDay) {
+    throw new HttpError(
+      tooManyRequests(
+        `Daily limit of ${LIMITS.messagesPerUserPerDay} messages reached. It resets on a rolling 24-hour window.`,
+      ),
+    );
+  }
+}
+
+/** Cap devices per user. Each one provisions a Cloudflare tunnel. */
+export async function assertDeviceQuota(userId: string) {
+  const used = await prisma.device.count({
+    where: { userId, revokedAt: null },
+  });
+  if (used >= LIMITS.devicesPerUser) {
+    throw new HttpError(
+      tooManyRequests(
+        `You can pair up to ${LIMITS.devicesPerUser} PCs. Revoke one to add another.`,
       ),
     );
   }

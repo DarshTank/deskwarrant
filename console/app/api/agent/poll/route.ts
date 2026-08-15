@@ -1,4 +1,6 @@
 import { authenticateAgent } from "@/lib/api-auth";
+import { VIEW_LOCAL_PORT } from "@/lib/cloudflare";
+import { decryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { handleRoute, json } from "@/lib/http";
 import { isViewSessionAlive } from "@/lib/view";
@@ -8,15 +10,7 @@ export const dynamic = "force-dynamic";
 
 const POLL_INTERVAL_MS = 2_000;
 
-/**
- * Live-view defaults advertised to the agent.
- *
- * The agent prefers whatever is in its own config.json — the local port is a
- * local binding fact, and the encoder settings are tuned per machine. These
- * travel in the poll so the contract is complete and a future console-side
- * setting has somewhere to live.
- */
-const VIEW_LOCAL_PORT = 47_821;
+/** Encoder defaults advertised to the agent, overridable in its own config. */
 const VIEW_TARGET_FPS = 10;
 const VIEW_TILE_SIZE = 128;
 const VIEW_WEBP_QUALITY = 70;
@@ -98,6 +92,15 @@ export async function GET(req: Request) {
         // observes the gap between them, so it re-reports tunnel state for a
         // fresh session instead of leaving the browser waiting on a stale one.
         sessionId: viewActive ? viewSession?.id : null,
+        // The tunnel token is sent only while a session is live, so an idle
+        // agent is not holding a runnable credential in memory for no reason.
+        // Ingress is configured server-side against this exact port, so the
+        // console is authoritative for it rather than the agent's config.
+        tunnelToken:
+          viewActive && device.tunnelTokenEnc
+            ? decryptSecret(device.tunnelTokenEnc)
+            : null,
+        hostname: device.tunnelHostname,
         localPort: VIEW_LOCAL_PORT,
         fps: VIEW_TARGET_FPS,
         tileSize: VIEW_TILE_SIZE,

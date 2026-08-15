@@ -49,6 +49,24 @@ class PollResult:
         value = self.view.get("sessionId")
         return str(value) if value else None
 
+    @property
+    def tunnel_token(self) -> str | None:
+        """Runs this device's tunnel. Sent only while a session is active."""
+        value = self.view.get("tunnelToken")
+        return str(value) if value else None
+
+    @property
+    def tunnel_hostname(self) -> str | None:
+        value = self.view.get("hostname")
+        return str(value) if value else None
+
+    @property
+    def view_local_port(self) -> int | None:
+        """The console configures tunnel ingress against this exact port, so it
+        is authoritative -- a local override would just break routing."""
+        value = self.view.get("localPort")
+        return int(value) if value else None
+
 
 class Transport:
     def __init__(self, config: AgentConfig, token: str) -> None:
@@ -139,26 +157,16 @@ class Transport:
         await self._request("POST", f"/api/agent/jobs/{job_id}/result", json=payload)
 
     async def post_view_state(
-        self,
-        tunnel_state: str,
-        *,
-        tunnel_error: str | None = None,
-        tunnel_hostname: str | None = None,
-        tunnel_name: str | None = None,
+        self, tunnel_state: str, *, tunnel_error: str | None = None
     ) -> None:
-        """Report tunnel status, and the device's tunnel identity, to the console.
+        """Report tunnel status to the console.
 
-        The hostname rides along here rather than through a separate call: the
-        console needs it to build the browser's `wsUrl`, and this is the only
-        moment the agent has anything new to say about it.
+        The console provisions the tunnel and already knows its hostname, so
+        the agent has nothing to tell it about identity -- only liveness.
         """
         payload: dict[str, Any] = {"tunnelState": tunnel_state}
         if tunnel_error:
             payload["tunnelError"] = tunnel_error[:500]
-        if tunnel_hostname:
-            payload["tunnelHostname"] = tunnel_hostname
-        if tunnel_name:
-            payload["tunnelName"] = tunnel_name
         await self._request("POST", "/api/agent/view/state", json=payload)
 
     async def verify_view_token(self, token: str) -> bool:

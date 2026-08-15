@@ -39,15 +39,14 @@ def log_path() -> Path:
 
 @dataclass
 class ViewConfig:
-    """Live-view settings: the local server, the tunnel, and the encoder.
+    """Live-view settings: the local server and the encoder.
 
-    `tunnel_name` and `hostname` come from the one-time `cloudflared` setup and
-    are filled in by hand (see the README). Provisioning them automatically
-    would mean storing a Cloudflare API token on the PC, which is a worse trade
-    than a manual step on a handful of personal devices.
+    The tunnel itself is provisioned by the console when this PC pairs, and its
+    token and hostname arrive on the poll -- there is nothing to configure here
+    and no Cloudflare account needed on this machine. `hostname` is kept only
+    as a diagnostic record of what the console last reported.
     """
 
-    tunnel_name: str = ""
     hostname: str = ""
     local_port: int = 47821
     tile_size: int = 128
@@ -57,7 +56,6 @@ class ViewConfig:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ViewConfig":
         return cls(
-            tunnel_name=str(raw.get("tunnelName", "")).strip(),
             hostname=str(raw.get("hostname", "")).strip().rstrip("/"),
             local_port=int(raw.get("localPort", 47821)),
             tile_size=int(raw.get("tileSize", 128)),
@@ -67,27 +65,12 @@ class ViewConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "tunnelName": self.tunnel_name,
             "hostname": self.hostname,
             "localPort": self.local_port,
             "tileSize": self.tile_size,
             "targetFps": self.target_fps,
             "webpQuality": self.webp_quality,
         }
-
-    @property
-    def configured(self) -> bool:
-        """False until the manual Cloudflare setup has been recorded here.
-
-        Checked before the agent claims live view is available, so an
-        unconfigured device reports a clear error instead of starting a tunnel
-        that can never resolve.
-        """
-        return bool(self.tunnel_name and self.hostname)
-
-    @property
-    def health_url(self) -> str:
-        return f"https://{self.hostname}/health"
 
     @property
     def local_health_url(self) -> str:

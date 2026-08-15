@@ -3,6 +3,7 @@ import { requireOwnedDevice, requireUser } from "@/lib/api-auth";
 import { runAssistantTurn, type AssistantEvent } from "@/lib/assistant/loop";
 import { prisma } from "@/lib/db";
 import { badRequest, handleRoute, parseBody } from "@/lib/http";
+import { assertUserMessageQuota } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +39,13 @@ export async function POST(
     const { id } = await params;
     const device = await requireOwnedDevice(id, user.id);
     const body = await parseBody(req, bodySchema);
+
+    // Every turn costs a Groq call on the operator's key, and sign-up is open,
+    // so one account must not be able to drain the quota for everyone. Resuming
+    // a confirmation is exempt: the message it belongs to was already counted.
+    if (body.message) {
+      await assertUserMessageQuota(user.id);
+    }
 
     // Resolve the conversation before opening the stream so a bad id is a
     // plain 400 rather than an error buried inside the event stream.

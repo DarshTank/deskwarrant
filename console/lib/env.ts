@@ -30,6 +30,28 @@ export const env = {
   get groqModel() {
     return optional("GROQ_MODEL", "llama-3.3-70b-versatile");
   },
+  /**
+   * Cloudflare API token — scopes: Account → Cloudflare Tunnel:Edit, and
+   * Zone → DNS:Edit on the tunnel domain. This can edit DNS across the whole
+   * zone, so it lives here and is never sent to an agent.
+   */
+  get cloudflareApiToken() {
+    return required("CLOUDFLARE_API_TOKEN");
+  },
+  get cloudflareAccountId() {
+    return required("CLOUDFLARE_ACCOUNT_ID");
+  },
+  get cloudflareZoneId() {
+    return required("CLOUDFLARE_ZONE_ID");
+  },
+  /** Devices get `pc-xxxxxxxx.<this>`. */
+  get tunnelBaseDomain() {
+    return required("TUNNEL_BASE_DOMAIN");
+  },
+  /** 32 bytes, base64. Encrypts tunnel tokens at rest. */
+  get tunnelEncryptionKey() {
+    return required("TUNNEL_ENCRYPTION_KEY");
+  },
   get vapidPublicKey() {
     return required("VAPID_PUBLIC_KEY");
   },

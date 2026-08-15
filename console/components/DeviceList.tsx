@@ -43,7 +43,9 @@ export function DeviceList() {
   }, [refresh]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+    // The shell no longer scrolls, so this page owns its own scrolling.
+    <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto w-full max-w-6xl px-4 py-8">
       <div className="mb-6 flex items-baseline justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Devices</h1>
         {devices && devices.length > 0 && (
@@ -108,7 +110,8 @@ export function DeviceList() {
         </ul>
       )}
 
-      <PairDeviceCard onPaired={refresh} />
+        <PairDeviceCard onPaired={refresh} />
+      </div>
     </div>
   );
 }
