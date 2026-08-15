@@ -1,0 +1,35 @@
+# --- secrets ---
+.env
+.env.local
+.env*.local
+!.env.example
+
+# --- node / next ---
+node_modules/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# --- pyinstaller ---
+agent/build/
+agent/dist/
+
+# --- agent runtime state (also lives in %LOCALAPPDATA%, never in the repo) ---
+agent/config.json
+agent/*.log
+
+# --- editors / os ---
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.swp

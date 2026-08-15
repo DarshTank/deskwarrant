@@ -1,0 +1,33 @@
+# DeskWarrant host agent - Windows only, Python 3.11+
+# Install:  py -3 -m pip install -r requirements.txt
+
+# --- control plane ---
+httpx==0.28.1
+keyring==25.6.0
+
+# --- system inspection ---
+psutil==6.1.1
+pywin32==308
+uiautomation==2.0.20
+
+# --- screen capture and encoding ---
+mss==10.0.0
+Pillow==11.1.0
+xxhash==3.5.0
+
+# --- data plane ---
+# 1.15+ is required on Python 3.13: earlier aiortc pins av<13, which has no
+# cp313 wheel and falls back to a source build needing MSVC build tools.
+aiortc==1.15.0
+
+# --- volume control (set_volume tool) ---
+# pycaw drives the Windows Core Audio API; comtypes is its COM binding and is
+# also used by uiautomation.
+pycaw==20240210
+comtypes==1.4.8
+
+# --- optional: system tray icon (agent runs fine without it) ---
+pystray==0.19.5
+
+# --- packaging (Stage 8) ---
+pyinstaller==6.11.1

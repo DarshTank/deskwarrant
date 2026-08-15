@@ -1,0 +1,248 @@
+// DeskWarrant — data model (build plan §6)
+// DATABASE_URL must be Neon's POOLED endpoint (hostname contains "-pooler").
+// DIRECT_URL must be the direct endpoint; used by `prisma migrate` only.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Auth (Auth.js standard models) ----------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  devices       Device[]
+  pushSubs      PushSubscription[]
+  createdAt     DateTime  @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------- Devices ----------
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+}
+
+model Device {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  hostname     String
+  osVersion    String
+  agentVersion String
+  tokenHash    String       @unique
+  status       DeviceStatus @default(OFFLINE)
+  lastSeenAt   DateTime?
+  monitorIndex Int          @default(0)
+  configVersion Int         @default(1)
+  pairedAt     DateTime     @default(now())
+  revokedAt    DateTime?
+
+  jobs          Job[]
+  conversations Conversation[]
+  watchRules    WatchRule[]
+  watchEvents   WatchEvent[]
+  rtcSessions   RtcSession[]
+
+  @@index([userId])
+}
+
+model PairingCode {
+  id         String    @id @default(cuid())
+  userId     String
+  code       String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------- Chat ----------
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  deviceId  String
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  title     String?
+  messages  Message[]
+  createdAt DateTime  @default(now())
+
+  @@index([deviceId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String       @db.Text
+  toolCalls      Json?
+  toolResults    Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+// ---------- Jobs (control plane work units) ----------
+
+enum JobStatus {
+  PENDING
+  AWAITING_CONFIRM
+  DISPATCHED
+  DONE
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+model Job {
+  id                   String    @id @default(cuid())
+  deviceId             String
+  device               Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  toolName             String
+  args                 Json
+  status               JobStatus @default(PENDING)
+  requiresConfirmation Boolean   @default(false)
+  confirmedAt          DateTime?
+  result               Json?
+  error                String?
+  createdAt            DateTime  @default(now())
+  dispatchedAt         DateTime?
+  completedAt          DateTime?
+  expiresAt            DateTime
+
+  @@index([deviceId, status])
+}
+
+// ---------- Watch ----------
+
+enum WatchTemplate {
+  DISK_LOW
+  PROCESS_EXITED
+  PROCESS_STARTED
+  CPU_SUSTAINED_HIGH
+  DOWNLOAD_COMPLETE
+  BATTERY_LOW
+}
+
+model WatchRule {
+  id              String        @id @default(cuid())
+  deviceId        String
+  device          Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  template        WatchTemplate
+  params          Json
+  enabled         Boolean       @default(true)
+  cooldownSeconds Int           @default(600)
+  lastTriggeredAt DateTime?
+  events          WatchEvent[]
+  createdAt       DateTime      @default(now())
+
+  @@index([deviceId])
+}
+
+model WatchEvent {
+  id        String    @id @default(cuid())
+  ruleId    String
+  rule      WatchRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  deviceId  String
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  message   String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([deviceId, createdAt])
+}
+
+// ---------- WebRTC signaling ----------
+
+enum RtcStatus {
+  OFFERED
+  ANSWERED
+  FAILED
+  EXPIRED
+  CLOSED
+}
+
+model RtcSession {
+  id        String    @id @default(cuid())
+  deviceId  String
+  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId    String
+  offerSdp  String    @db.Text
+  answerSdp String?   @db.Text
+  status    RtcStatus @default(OFFERED)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+
+  @@index([deviceId, status])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
