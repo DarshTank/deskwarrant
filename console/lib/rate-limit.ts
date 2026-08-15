@@ -16,8 +16,8 @@ export const LIMITS = {
   jobsPerMinute: 60,
   /** Watch events submitted by one device, per minute. */
   eventsPerMinute: 30,
-  /** RTC offers created for one device, per minute. */
-  rtcOffersPerMinute: 12,
+  /** View tokens issued for one device, per minute (migration §10). */
+  viewTokensPerMinute: 12,
 } as const;
 
 export async function assertJobQuota(deviceId: string, incoming: number) {
@@ -48,12 +48,12 @@ export async function assertEventQuota(deviceId: string, incoming: number) {
   }
 }
 
-export async function assertRtcOfferQuota(deviceId: string) {
+export async function assertViewTokenQuota(deviceId: string) {
   const since = new Date(Date.now() - 60_000);
-  const used = await prisma.rtcSession.count({
+  const used = await prisma.viewToken.count({
     where: { deviceId, createdAt: { gte: since } },
   });
-  if (used + 1 > LIMITS.rtcOffersPerMinute) {
+  if (used + 1 > LIMITS.viewTokensPerMinute) {
     throw new HttpError(
       tooManyRequests("Too many connection attempts. Wait a moment."),
     );

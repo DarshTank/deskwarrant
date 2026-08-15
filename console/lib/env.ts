@@ -30,12 +30,6 @@ export const env = {
   get groqModel() {
     return optional("GROQ_MODEL", "llama-3.3-70b-versatile");
   },
-  get turnKeyId() {
-    return required("CLOUDFLARE_TURN_KEY_ID");
-  },
-  get turnApiToken() {
-    return required("CLOUDFLARE_TURN_API_TOKEN");
-  },
   get vapidPublicKey() {
     return required("VAPID_PUBLIC_KEY");
   },

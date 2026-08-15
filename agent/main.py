@@ -45,22 +45,28 @@ def setup_logging(verbose: bool = False) -> None:
     )
     root.addHandler(file_handler)
 
-    # aiortc and its dependencies are extremely chatty at INFO.
-    for noisy in ("aioice", "aiortc", "httpx", "httpcore", "comtypes"):
+    # These are extremely chatty at INFO and drown out the agent's own log.
+    for noisy in ("aiohttp", "aiohttp.access", "httpx", "httpcore", "comtypes"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 class Agent:
-    """Owns the poll loop, job execution, watch evaluation, and RTC sessions."""
+    """Owns the poll loop, job execution, watch evaluation, and live view."""
 
     def __init__(self, config: AgentConfig, transport: Transport) -> None:
         self.config = config
         self.transport = transport
         self.evaluator = WatchEvaluator(config)
         self.config_version = 0
-        self._rtc_session: Any = None
         self._last_watch_run = 0.0
         self._status = "connecting"
+
+        # Live view. Both are created lazily on the first session so an agent
+        # that never opens live view never imports mss, Pillow, or aiohttp.
+        self._view_server: Any = None
+        self._tunnel: Any = None
+        self._reported_tunnel_state: str | None = None
+        self._view_session_id: str | None = None
 
     @property
     def status(self) -> str:
@@ -103,43 +109,102 @@ class Agent:
             # recoverable, crashing the agent is not.
             log.error("Could not report job %s: %s", job_id[:8], exc)
 
-    # ---------- RTC ----------
+    # ---------- live view ----------
 
-    async def _handle_offer(self, offer: dict[str, Any]) -> None:
-        session_id = offer.get("sessionId")
-        offer_sdp = offer.get("offerSdp")
-        if not session_id or not offer_sdp:
+    async def _sync_view(self, active: bool, session_id: str | None) -> None:
+        """Match the local live-view stack to the console's session state.
+
+        Called every poll, so both directions must be cheap when already in the
+        requested state.
+        """
+        if not active:
+            await self._stop_view()
             return
 
-        # v1 is one live session at a time; a new offer supersedes the old.
-        if self._rtc_session is not None:
-            log.info("Replacing the active live session")
-            await self._rtc_session.close()
-            self._rtc_session = None
+        # A new session id means a different browser session, even if we never
+        # observed the gap between them. Forget what was reported so the fresh
+        # session hears the tunnel's state instead of waiting on a stale row.
+        if session_id != self._view_session_id:
+            self._view_session_id = session_id
+            self._reported_tunnel_state = None
 
-        log.info("Answering RTC session %s", session_id[:8])
+        await self._start_view()
+
+    async def _start_view(self) -> None:
+        # Imported lazily: aiohttp, mss, and Pillow are only needed once a
+        # browser actually asks to watch.
+        if self._view_server is None:
+            from server.app import ViewServer
+            from server.tunnel import TunnelSupervisor
+
+            self._view_server = ViewServer(
+                self.config, self.transport.verify_view_token
+            )
+            self._tunnel = TunnelSupervisor(self.config.view)
+
         try:
-            # Imported lazily: aiortc pulls in a large native dependency tree,
-            # and an agent that never opens live view should not pay for it.
-            from rtc.session import RtcSession
+            await self._view_server.start()
+        except OSError as exc:
+            log.error("Could not bind the live-view server: %s", exc)
+            await self._report_tunnel_state(
+                "FAILED", error=f"Local port {self.config.view.local_port} is in use."
+            )
+            return
 
-            session = RtcSession(session_id, offer_sdp, self.config)
-            answer_sdp = await session.answer()
-            await self.transport.post_rtc_answer(session_id, answer_sdp)
-            self._rtc_session = session
-            self._status = "live"
+        await self._tunnel.ensure_started()
+        await self._tunnel.supervise()
+        await self._report_tunnel_state(
+            self._tunnel.state.value, error=self._tunnel.error
+        )
+        self._status = "live" if self._tunnel.state.value == "UP" else "online"
 
-            asyncio.ensure_future(self._await_session_end(session))
-        except TransportError as exc:
-            log.error("Could not post the RTC answer: %s", exc)
+    async def _stop_view(self) -> None:
+        if self._tunnel is None and self._view_server is None:
+            return
+
+        if self._tunnel is not None:
+            await self._tunnel.stop()
+        if self._view_server is not None:
+            await self._view_server.stop()
+
+        # STOPPED is reported once per session, not on every idle poll.
+        await self._report_tunnel_state("STOPPED")
+        self._view_session_id = None
+        self._status = "online"
+
+    async def shutdown(self) -> None:
+        """Tear the live-view stack down on exit.
+
+        Best effort and never raises: this runs on the way out, including after
+        a revoked-device error, and must not mask the original failure.
+        """
+        try:
+            if self._tunnel is not None:
+                await self._tunnel.stop()
+            if self._view_server is not None:
+                await self._view_server.stop()
         except Exception:  # noqa: BLE001
-            log.exception("Failed to establish the RTC session")
+            log.exception("Live-view shutdown failed")
 
-    async def _await_session_end(self, session: Any) -> None:
-        await session.wait_closed()
-        if self._rtc_session is session:
-            self._rtc_session = None
-            self._status = "online"
+    async def _report_tunnel_state(
+        self, state: str, error: str | None = None
+    ) -> None:
+        if state == self._reported_tunnel_state:
+            return
+        self._reported_tunnel_state = state
+        try:
+            await self.transport.post_view_state(
+                state,
+                tunnel_error=error,
+                # Sent every time: this is how the console learns the device's
+                # hostname after the one-time cloudflared setup (§8).
+                tunnel_hostname=self.config.view.hostname or None,
+                tunnel_name=self.config.view.tunnel_name or None,
+            )
+        except TransportError as exc:
+            # A lost status update self-corrects on the next transition; the
+            # browser will meanwhile see the session time out.
+            log.error("Could not report tunnel state: %s", exc)
 
     # ---------- watch ----------
 
@@ -180,14 +245,12 @@ class Agent:
                 continue
 
             self.transport.reset_backoff()
-            self._status = "live" if self._rtc_session else "online"
 
             if poll.watch_rules is not None:
                 self.evaluator.set_rules(poll.watch_rules)
             self.config_version = poll.config_version
 
-            for offer in poll.rtc_offers:
-                await self._handle_offer(offer)
+            await self._sync_view(poll.view_active, poll.view_session_id)
 
             did_work = False
             if poll.jobs:
@@ -257,6 +320,9 @@ async def bootstrap(args: argparse.Namespace) -> int:
         log.info("Shutting down")
         return 0
     finally:
+        # Never leave a cloudflared process behind: an orphaned tunnel would
+        # keep the PC publicly reachable after the agent is gone.
+        await agent.shutdown()
         if tray is not None:
             tray.stop()
         await transport.aclose()

@@ -16,9 +16,10 @@ Pillow==11.1.0
 xxhash==3.5.0
 
 # --- data plane ---
-# 1.15+ is required on Python 3.13: earlier aiortc pins av<13, which has no
-# cp313 wheel and falls back to a source build needing MSVC build tools.
-aiortc==1.15.0
+# The live-view server, bound to 127.0.0.1 and reached through Cloudflare
+# Tunnel. Pure Python: no native build step, and far lighter than the aiortc
+# stack it replaced (av, pylibsrtp, cryptography).
+aiohttp==3.11.11
 
 # --- volume control (set_volume tool) ---
 # pycaw drives the Windows Core Audio API; comtypes is its COM binding and is

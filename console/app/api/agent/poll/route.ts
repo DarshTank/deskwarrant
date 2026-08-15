@@ -1,11 +1,25 @@
 import { authenticateAgent } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { handleRoute, json } from "@/lib/http";
+import { isViewSessionAlive } from "@/lib/view";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Live-view defaults advertised to the agent.
+ *
+ * The agent prefers whatever is in its own config.json — the local port is a
+ * local binding fact, and the encoder settings are tuned per machine. These
+ * travel in the poll so the contract is complete and a future console-side
+ * setting has somewhere to live.
+ */
+const VIEW_LOCAL_PORT = 47_821;
+const VIEW_TARGET_FPS = 10;
+const VIEW_TILE_SIZE = 128;
+const VIEW_WEBP_QUALITY = 70;
 
 /**
  * GET /api/agent/poll — the control plane's only inbound channel.
@@ -68,21 +82,27 @@ export async function GET(req: Request) {
       }));
     }
 
-    // Outstanding WebRTC offers this agent has not yet answered.
-    const offers = await prisma.rtcSession.findMany({
-      where: {
-        deviceId: device.id,
-        status: "OFFERED",
-        expiresAt: { gte: now },
-      },
-      orderBy: { createdAt: "asc" },
-      take: 3,
-      select: { id: true, offerSdp: true },
+    // Live view. `active` is what starts and stops `cloudflared` on the PC, so
+    // a lapsed heartbeat here is what takes the machine back off the internet.
+    const viewSession = await prisma.viewSession.findUnique({
+      where: { deviceId: device.id },
+      select: { id: true, lastHeartbeat: true, endedAt: true },
     });
+    const viewActive = isViewSessionAlive(viewSession);
 
     const payload: Record<string, unknown> = {
       jobs,
-      rtcOffers: offers.map((o) => ({ sessionId: o.id, offerSdp: o.offerSdp })),
+      view: {
+        active: viewActive,
+        // Lets the agent tell one session from the next even when it never
+        // observes the gap between them, so it re-reports tunnel state for a
+        // fresh session instead of leaving the browser waiting on a stale one.
+        sessionId: viewActive ? viewSession?.id : null,
+        localPort: VIEW_LOCAL_PORT,
+        fps: VIEW_TARGET_FPS,
+        tileSize: VIEW_TILE_SIZE,
+        quality: VIEW_WEBP_QUALITY,
+      },
       pollIntervalMs: POLL_INTERVAL_MS,
       configVersion: device.configVersion,
     };

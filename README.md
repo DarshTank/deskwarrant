@@ -19,12 +19,18 @@ stays live, so you can delegate a task and watch it happen.
 
 ## Privacy property
 
-**Screen pixels travel only peer-to-peer to your own browser, DTLS-encrypted.**
-They never pass through the console server.
+**Your screen is never sent to any AI model.** The assistant only ever receives
+text — process names, PIDs, window titles, file listings, numeric statistics.
+No image is ever sent to Groq or any third party, and there is no vision model
+anywhere in this system.
 
-**The language model receives only text** — process names, PIDs, window titles,
-file listings, numeric statistics. No image is ever sent to Groq or any third
-party. There is no vision model anywhere in this system.
+**Live view streams over an encrypted tunnel and is never stored.** Frames go
+from your PC to Cloudflare's edge and on to your browser, encrypted in flight.
+They are not written to the database and not retained anywhere.
+
+> Earlier versions of this project used peer-to-peer WebRTC and claimed frames
+> touched no third party. That is no longer accurate — frames now transit
+> Cloudflare's edge. The claim above is what is true today.
 
 ---
 
@@ -39,15 +45,16 @@ party. There is no vision model anywhere in this system.
 └───────┬────────┘         └────────────┬─────────────┘
         │                               │
         │                               │ HTTP polling (2s)
-        │  WebRTC DataChannel           │ agent → console
-        │  (DTLS-encrypted, P2P)        │
+        │  WebSocket over               │ agent → console
+        │  Cloudflare Tunnel (TLS)      │
         │                               ▼
-        │                     ┌──────────────────────┐
-        └────────────────────►│  Host Agent (Windows)│
-                              │  - tool executor     │
-                              │  - watch evaluator   │
-                              │  - capture + input   │
-                              └──────────────────────┘
+        │   ┌────────────────┐  ┌──────────────────────┐
+        └──►│ Cloudflare edge│─►│  Host Agent (Windows)│
+            └────────────────┘  │  - tool executor     │
+             outbound-only,     │  - watch evaluator   │
+             on demand          │  - capture + input   │
+                                │  - 127.0.0.1 server  │
+                                └──────────────────────┘
 ```
 
 **Why polling, not WebSockets.** Vercel serverless functions terminate after
@@ -57,12 +64,21 @@ driving online/offline status. A 2-second worst-case dispatch latency is
 imperceptible for "is my render done?", and it removes an entire class of
 infrastructure problems.
 
-**Why WebRTC only for the data plane.** Frames need low latency and would be
-expensive to relay through a server. Peer-to-peer delivery means frame bytes
-never touch the console and cost nothing in bandwidth. Signaling is plain HTTP
-using **non-trickle ICE**: each peer gathers all candidates to completion, then
-posts one complete SDP. That costs 1–3 seconds of setup and removes the need for
-any persistent signaling connection.
+**Why a tunnel, not WebRTC.** The agent opens an **outbound** connection to
+Cloudflare's edge and gets back a public HTTPS hostname; the browser connects to
+that hostname over WebSocket. There is no NAT traversal, no ICE, no relay quota,
+and no degraded fallback mode — it runs at full frame rate on every network,
+including a phone on mobile data with the PC behind home NAT. That case is
+exactly where peer-to-peer used to fail without a paid TURN relay.
+
+**The tunnel runs on demand, not permanently.** It starts when you open live
+view and stops within ~20 seconds of you closing it, so the PC is reachable from
+the internet only while you are actually watching. Starting it costs 3–6
+seconds, which is the price of not being publicly addressable around the clock.
+
+**Frames never touch the console.** They go PC → Cloudflare edge → browser. The
+console handles authentication and session lifecycle only, so live view costs
+nothing in Vercel bandwidth.
 
 ---
 
@@ -74,12 +90,12 @@ deskwarrent/
 │   ├── app/
 │   │   ├── (auth)/signin/
 │   │   ├── (dashboard)/devices/[id]/
-│   │   └── api/                 # agent, devices, jobs, turn, push
+│   │   └── api/                 # agent, devices, jobs, view, push
 │   ├── components/              # Chat, LiveView, WatchRules, EventFeed
 │   ├── lib/
 │   │   ├── assistant/           # loop, system prompt, tool catalog (Zod)
 │   │   ├── watch/templates.ts
-│   │   ├── auth.ts  db.ts  turn.ts  safety helpers
+│   │   ├── auth.ts  db.ts  view.ts  safety helpers
 │   └── prisma/schema.prisma
 │
 └── agent/                       # Python 3.11+ host agent (Windows only)
@@ -87,7 +103,7 @@ deskwarrent/
     ├── config.py  credentials.py  transport.py  pairing.py  safety.py
     ├── tools/                   # registry + processes, windows, files, system, actions
     ├── watch/rules.py           # local rule evaluation
-    ├── rtc/                     # session, capture, input
+    ├── server/                  # app (127.0.0.1 WS), tunnel, capture, input
     ├── deskwarrant.spec         # PyInstaller
     └── install.ps1              # Task Scheduler registration
 ```
@@ -97,8 +113,9 @@ deskwarrent/
 ## Setup
 
 You need five things, all free-tier: a **Neon** Postgres database, a **Google
-OAuth** client, a **Groq** API key, **Cloudflare Realtime TURN** credentials, and
-a **VAPID** key pair.
+OAuth** client, a **Groq** API key, a **VAPID** key pair, and — for live view
+only — a **domain on Cloudflare's free plan**. No card is required for any of
+them.
 
 ### 1. Console environment
 
@@ -115,7 +132,6 @@ cp .env.example .env      # then fill it in
 | `AUTH_URL` | `http://localhost:3000`, or your Vercel URL in production |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google Cloud Console → Credentials → OAuth 2.0 Client (Web). Authorized redirect URI must be `<AUTH_URL>/api/auth/callback/google` |
 | `GROQ_API_KEY` | console.groq.com/keys |
-| `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN` | Cloudflare Dashboard → Realtime → TURN |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same value as `VAPID_PUBLIC_KEY` |
 
@@ -157,14 +173,70 @@ Agent config lives at `%LOCALAPPDATA%\DeskWarrant\config.json`:
   "consoleUrl": "https://<app>.vercel.app",
   "pollIntervalMs": 2000,
   "allowedRoots": ["%USERPROFILE%\\Downloads", "%USERPROFILE%\\Documents", "%USERPROFILE%\\Desktop"],
-  "capture": { "tileSize": 128, "targetFps": 10, "webpQuality": 70 }
+  "view": {
+    "tunnelName": "deskwarrant-darsh-pc",
+    "hostname": "pc-7f2a.yourdomain.com",
+    "localPort": 47821,
+    "tileSize": 128,
+    "targetFps": 10,
+    "webpQuality": 70
+  }
 }
 ```
 
 To grant access to more folders, edit `allowedRoots` **on the machine itself**.
 Roots can never be changed remotely, and the assistant can never change them.
 
-### 3. Package and autostart (optional)
+Ask, Act, and Watch work with `view` left empty. It is needed only for live view.
+
+### 3. Cloudflare Tunnel, for live view (once per PC)
+
+This is a one-time manual step and is **deliberately not automated**: doing it
+from code would mean storing a Cloudflare API token on the PC, which is a worse
+trade than five minutes of setup on a handful of personal machines.
+
+1. Add a domain you own to Cloudflare on the **free** plan and point its
+   nameservers at Cloudflare. No card required.
+2. Install `cloudflared` and log in — this opens a browser to authorise the
+   domain:
+   ```powershell
+   winget install --id Cloudflare.cloudflared
+   cloudflared tunnel login
+   ```
+3. Create a named tunnel for this PC:
+   ```powershell
+   cloudflared tunnel create deskwarrant-darsh-pc
+   ```
+4. Route a hostname to it:
+   ```powershell
+   cloudflared tunnel route dns deskwarrant-darsh-pc pc-7f2a.yourdomain.com
+   ```
+5. Point the tunnel at the agent's local port by adding this to
+   `%USERPROFILE%\.cloudflared\config.yml`:
+   ```yaml
+   tunnel: deskwarrant-darsh-pc
+   credentials-file: C:\Users\<you>\.cloudflared\<tunnel-id>.json
+   ingress:
+     - hostname: pc-7f2a.yourdomain.com
+       service: http://127.0.0.1:47821
+     - service: http_status:404
+   ```
+6. Put `tunnelName` and `hostname` into the agent's `config.json` as shown
+   above. The agent reports them to the console on its next poll.
+
+Verify before going further — run a dummy server on the port, start the tunnel,
+and load the hostname in a browser:
+
+```powershell
+python -m http.server 47821
+cloudflared tunnel --no-autoupdate run deskwarrant-darsh-pc
+```
+
+> **Do not use quick tunnels** (`trycloudflare.com`). They have no uptime
+> guarantee, cap in-flight requests at 200, and do not support Server-Sent
+> Events — which the assistant's chat streams over.
+
+### 4. Package and autostart (optional)
 
 ```powershell
 cd agent
@@ -188,9 +260,11 @@ Task Scheduler gives it no console to prompt on.
 | Prompt injection | Window titles, filenames, and UI text are untrusted input. The model selects from a fixed typed tool catalog and never emits shell or code. Arguments are validated with Zod server-side and re-validated agent-side. |
 | Filesystem | Hard allowlist of roots, canonicalised path check, system directories denied unconditionally |
 | Destructive actions | Explicit user confirmation showing the exact tool and arguments |
-| Frame confidentiality | The DataChannel is DTLS-encrypted end-to-end. The console never sees frame bytes. |
-| TURN credentials | Minted server-side, short-lived, per session. Never static, never client-embedded. |
-| Rate limiting | Per-device caps on job creation, event submission, and connection attempts |
+| Public exposure | The tunnel runs **only during an active view session**. No session, no reachable endpoint — the hostname stops resolving to anything. |
+| Local binding | The agent's live-view server binds `127.0.0.1` exclusively, never `0.0.0.0`, so it is not reachable from the LAN. |
+| View authentication | A short-lived token (32 random bytes, SHA-256 at rest, 5-minute TTL) is issued to an authenticated browser and verified by the agent **against the console on every socket connect** — which is what makes revocation instant. |
+| Frame confidentiality | TLS to Cloudflare's edge, then Cloudflare's encrypted tunnel to the agent. Frames are never stored. |
+| Rate limiting | Per-device caps on job creation, event submission, and view-token issuance |
 
 **On prompt injection specifically:** the structural defence is that the model
 cannot express a dangerous action. It picks a name from a 13-entry catalog and

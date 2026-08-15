@@ -3,19 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client-api";
 
-interface IceServer {
-  urls: string | string[];
-  username?: string;
-  credential?: string;
-}
-
-interface TurnResponse {
-  iceServers: IceServer[];
-  turnConfigured: boolean;
-  warning?: string;
-}
-
-/** Header of a frame message (build plan §5 wire format). */
+/** Header of a frame message (build plan §5 wire format, unchanged). */
 interface FrameHeader {
   seq: number;
   ts: number;
@@ -25,20 +13,23 @@ interface FrameHeader {
   tiles: { x: number; y: number; w: number; h: number; len: number }[];
 }
 
-type Phase =
-  | "idle"
-  | "requesting-ice"
-  | "gathering"
-  | "signaling"
-  | "waiting-answer"
-  | "connecting"
-  | "live"
-  | "failed"
-  | "closed";
+interface ViewStatus {
+  active: boolean;
+  tunnelState: "STARTING" | "UP" | "FAILED" | "STOPPED";
+  tunnelError: string | null;
+  tunnelHostname: string | null;
+  tunnelConfigured: boolean;
+  deviceOnline: boolean;
+}
 
-const ANSWER_POLL_INTERVAL_MS = 500;
-const ANSWER_TIMEOUT_MS = 30_000;
-const ICE_GATHER_TIMEOUT_MS = 5_000;
+type Phase = "idle" | "starting" | "connecting" | "live" | "failed" | "closed";
+
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const STATUS_POLL_INTERVAL_MS = 700;
+/** The tunnel normally comes up in 3–6s; past 30s it is not coming up. */
+const TUNNEL_TIMEOUT_MS = 30_000;
+/** Same rule as the DataChannel had — only the property name changed. */
+const BUFFER_HIGH_WATER_BYTES = 1_000_000;
 
 export function LiveView({
   deviceId,
@@ -50,22 +41,20 @@ export function LiveView({
   interactive?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const channelRef = useRef<RTCDataChannel | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
   const stoppedRef = useRef(false);
+  const startedRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>("idle");
-  const [iceState, setIceState] = useState<string>("new");
+  const [detail, setDetail] = useState<string>("Not connected");
   const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
   const [stats, setStats] = useState({ fps: 0, kbps: 0, seq: 0 });
 
   // `since: 0` rather than Date.now(): reading the clock during render is an
   // impure call, and the first frame initialises the window anyway.
   const frameCounter = useRef({ frames: 0, bytes: 0, since: 0 });
 
-  // ---------- Frame rendering ----------
+  // ---------- Frame rendering (unchanged: same wire format) ----------
 
   const drawFrame = useCallback(async (buffer: ArrayBuffer) => {
     const view = new DataView(buffer);
@@ -134,21 +123,19 @@ export function LiveView({
 
   const stop = useCallback(async () => {
     stoppedRef.current = true;
-    channelRef.current?.close();
-    channelRef.current = null;
-    pcRef.current?.close();
-    pcRef.current = null;
+    socketRef.current?.close();
+    socketRef.current = null;
     setPhase("closed");
-    setIceState("closed");
+    setDetail("Disconnected");
 
-    const sessionId = sessionIdRef.current;
-    sessionIdRef.current = null;
-    if (sessionId) {
-      // Best effort: tell the agent to return to idle.
-      await api(`/api/devices/${deviceId}/rtc/${sessionId}`, {
-        method: "DELETE",
-      }).catch(() => {});
-    }
+    if (!startedRef.current) return;
+    startedRef.current = false;
+
+    // Ends the session now rather than waiting ~20s for the heartbeat to
+    // lapse, so cloudflared exits on the PC within a few seconds.
+    await api(`/api/devices/${deviceId}/view/stop`, { method: "POST" }).catch(
+      () => {},
+    );
   }, [deviceId]);
 
   useEffect(() => {
@@ -157,108 +144,124 @@ export function LiveView({
     };
   }, [stop]);
 
+  // The unmount cleanup does not run when the tab is closed outright, and a
+  // session left open would hold the tunnel up for its full 20s timeout.
+  useEffect(() => {
+    const onUnload = () => {
+      if (!startedRef.current) return;
+      navigator.sendBeacon?.(`/api/devices/${deviceId}/view/stop`);
+    };
+    window.addEventListener("pagehide", onUnload);
+    return () => window.removeEventListener("pagehide", onUnload);
+  }, [deviceId]);
+
+  // ---------- Heartbeat ----------
+
+  useEffect(() => {
+    if (phase !== "live" && phase !== "connecting") return;
+
+    const timer = setInterval(() => {
+      void api(`/api/devices/${deviceId}/view/heartbeat`, {
+        method: "POST",
+      }).catch(() => {
+        /* one missed beat is harmless; four in a row ends the session */
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [deviceId, phase]);
+
   // ---------- Connect ----------
 
   const connect = useCallback(async () => {
     stoppedRef.current = false;
     setError(null);
-    setWarning(null);
-    setPhase("requesting-ice");
+    setPhase("starting");
+    setDetail("Starting secure connection…");
 
     try {
-      const turn = await api<TurnResponse>("/api/turn-credentials");
-      if (!turn.turnConfigured) {
-        setWarning(
-          turn.warning ??
-            "TURN is not configured, so this will only connect on the same network.",
-        );
-      }
+      await api(`/api/devices/${deviceId}/view/start`, { method: "POST" });
+      startedRef.current = true;
 
-      const pc = new RTCPeerConnection({ iceServers: turn.iceServers });
-      pcRef.current = pc;
-
-      pc.oniceconnectionstatechange = () => {
-        setIceState(pc.iceConnectionState);
-        if (pc.iceConnectionState === "connected") setPhase("live");
-        if (
-          pc.iceConnectionState === "failed" ||
-          pc.iceConnectionState === "disconnected"
-        ) {
-          setPhase("failed");
-          setError(
-            "The peer connection dropped. If this only happens off your home network, TURN relay is not working.",
-          );
-        }
-      };
-
-      const channel = pc.createDataChannel("deskwarrant", {
-        ordered: true,
-        // Frames are self-contained; a late tile is worse than a dropped one.
-        maxRetransmits: 0,
-      });
-      channel.binaryType = "arraybuffer";
-      channelRef.current = channel;
-
-      channel.onopen = () => {
-        setPhase("live");
-        channel.send(JSON.stringify({ t: "c", e: "keyframe" }));
-      };
-      channel.onclose = () => {
-        if (!stoppedRef.current) setPhase("closed");
-      };
-      channel.onmessage = (event) => {
-        if (event.data instanceof ArrayBuffer) {
-          void drawFrame(event.data);
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      // Non-trickle ICE (build plan §5): gather to completion, then post ONE
-      // complete SDP. Costs 1–3s of setup and removes the need for any
-      // persistent signalling connection.
-      setPhase("gathering");
-      await waitForIceGathering(pc);
+      const status = await waitForTunnel(deviceId, stoppedRef, setDetail);
       if (stoppedRef.current) return;
 
-      setPhase("signaling");
-      const { sessionId } = await api<{ sessionId: string }>(
-        `/api/devices/${deviceId}/rtc/offer`,
-        {
-          method: "POST",
-          json: { offerSdp: pc.localDescription?.sdp ?? offer.sdp },
-        },
-      );
-      sessionIdRef.current = sessionId;
-
-      setPhase("waiting-answer");
-      const answerSdp = await pollForAnswer(deviceId, sessionId, stoppedRef);
-      if (stoppedRef.current) return;
-      if (!answerSdp) {
+      if (status.tunnelState !== "UP") {
         throw new Error(
-          "The PC did not answer. Check that the agent is running and online.",
+          status.tunnelError ??
+            (status.tunnelConfigured
+              ? "The PC could not open its tunnel."
+              : "This PC has no Cloudflare tunnel configured yet. Run the one-time setup in the README."),
         );
       }
 
       setPhase("connecting");
-      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+      setDetail("Opening the stream…");
+
+      const { token, wsUrl } = await api<{ token: string; wsUrl: string }>(
+        `/api/devices/${deviceId}/view-token`,
+        { method: "POST" },
+      );
+      if (stoppedRef.current) return;
+
+      const socket = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`);
+      socket.binaryType = "arraybuffer";
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        setPhase("live");
+        setDetail("Live");
+        socket.send(JSON.stringify({ t: "c", e: "keyframe" }));
+      };
+      socket.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) void drawFrame(event.data);
+      };
+      socket.onerror = () => {
+        if (stoppedRef.current) return;
+        setPhase("failed");
+        setError("The connection to your PC dropped.");
+      };
+      socket.onclose = (event) => {
+        if (stoppedRef.current) return;
+        if (event.code === 4401) {
+          setPhase("failed");
+          setError(
+            "Your PC rejected the access token. Try starting live view again.",
+          );
+          return;
+        }
+        setPhase("closed");
+        setDetail("Disconnected");
+      };
     } catch (err) {
       if (stoppedRef.current) return;
       setPhase("failed");
       setError(err instanceof Error ? err.message : "Live view failed to start.");
+
+      // End the session now instead of letting the heartbeat lapse, so the PC
+      // stops trying to hold a tunnel up. Deliberately not `stop()`: that would
+      // set phase to "closed" and hide the error the user needs to read.
+      if (startedRef.current) {
+        startedRef.current = false;
+        void api(`/api/devices/${deviceId}/view/stop`, { method: "POST" }).catch(
+          () => {},
+        );
+      }
     }
   }, [deviceId, drawFrame]);
 
-  // ---------- Input (build plan §6) ----------
+  // ---------- Input (build plan §6, message shapes unchanged) ----------
 
   const sendInput = useCallback((payload: unknown) => {
-    const channel = channelRef.current;
-    if (!channel || channel.readyState !== "open") return;
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    // Never queue input behind a congested socket: a stale click is worse than
+    // a dropped one.
+    if (socket.bufferedAmount > BUFFER_HIGH_WATER_BYTES) return;
     try {
-      channel.send(JSON.stringify(payload));
+      socket.send(JSON.stringify(payload));
     } catch {
-      /* channel closed underneath us */
+      /* socket closed underneath us */
     }
   }, []);
 
@@ -307,14 +310,15 @@ export function LiveView({
     };
   }, [interactive, live, sendInput]);
 
+  const busy = phase === "starting" || phase === "connecting";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-xs">
         <span className="text-muted">
-          {phaseLabel(phase)}
+          {detail}
           {live && ` · ${stats.fps} fps · ${stats.kbps} kbit/s`}
         </span>
-        <span className="font-mono text-muted">ice: {iceState}</span>
         <div className="ml-auto flex gap-2">
           {live && (
             <button
@@ -325,16 +329,15 @@ export function LiveView({
               Refresh
             </button>
           )}
-          {phase === "idle" || phase === "closed" || phase === "failed" ? (
+          {busy ? (
             <button
               type="button"
-              onClick={() => void connect()}
-              disabled={!online}
-              className="rounded-md bg-accent px-3 py-1 font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+              onClick={() => void stop()}
+              className="rounded-md border border-border px-3 py-1 transition-colors hover:bg-surface"
             >
-              {online ? "Start live view" : "PC offline"}
+              Cancel
             </button>
-          ) : (
+          ) : live ? (
             <button
               type="button"
               onClick={() => void stop()}
@@ -342,19 +345,32 @@ export function LiveView({
             >
               Stop
             </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void connect()}
+              disabled={!online}
+              className="rounded-md bg-accent px-3 py-1 font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              {online
+                ? phase === "failed"
+                  ? "Retry live view"
+                  : "Start live view"
+                : "PC offline"}
+            </button>
           )}
         </div>
       </div>
 
-      {warning && (
-        <p className="shrink-0 border-b border-warn/40 bg-warn/10 px-4 py-2 text-xs text-warn">
-          {warning}
-        </p>
-      )}
       {error && (
-        <p className="shrink-0 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger">
-          {error}
-        </p>
+        <div className="shrink-0 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger">
+          <p>{error}</p>
+          {/* There is no degraded view mode to fall back to, so say plainly
+              what still works rather than leaving a dead canvas on screen. */}
+          <p className="mt-1 text-muted">
+            Ask, Act, and Watch are unaffected — they do not use the tunnel.
+          </p>
+        </div>
       )}
 
       <div className="min-h-0 flex-1 bg-black/90 p-2">
@@ -403,67 +419,49 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
-/** Resolve once ICE gathering completes, or after a timeout with what we have. */
-function waitForIceGathering(pc: RTCPeerConnection): Promise<void> {
-  if (pc.iceGatheringState === "complete") return Promise.resolve();
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      pc.removeEventListener("icegatheringstatechange", onChange);
-      clearTimeout(timer);
-      resolve();
-    };
-    const onChange = () => {
-      if (pc.iceGatheringState === "complete") finish();
-    };
-    pc.addEventListener("icegatheringstatechange", onChange);
-    // Some networks never report "complete"; ship whatever gathered by then.
-    const timer = setTimeout(finish, ICE_GATHER_TIMEOUT_MS);
-  });
-}
-
-async function pollForAnswer(
+/**
+ * Poll session status until the tunnel is up, fails, or the deadline passes.
+ *
+ * Returns the last status seen rather than throwing on timeout, so the caller
+ * can report the actual state the PC got stuck in.
+ */
+async function waitForTunnel(
   deviceId: string,
-  sessionId: string,
   stoppedRef: { current: boolean },
-): Promise<string | null> {
-  const deadline = Date.now() + ANSWER_TIMEOUT_MS;
+  onProgress: (message: string) => void,
+): Promise<ViewStatus> {
+  const deadline = Date.now() + TUNNEL_TIMEOUT_MS;
+  let last: ViewStatus = {
+    active: false,
+    tunnelState: "STARTING",
+    tunnelError: null,
+    tunnelHostname: null,
+    tunnelConfigured: true,
+    deviceOnline: true,
+  };
+
   while (Date.now() < deadline && !stoppedRef.current) {
-    const data = await api<{ status: string; answerSdp: string | null }>(
-      `/api/devices/${deviceId}/rtc/${sessionId}`,
+    const status = await api<ViewStatus>(
+      `/api/devices/${deviceId}/view`,
     ).catch(() => null);
 
-    if (data?.status === "ANSWERED" && data.answerSdp) return data.answerSdp;
-    if (data && ["FAILED", "EXPIRED", "CLOSED"].includes(data.status)) {
-      return null;
+    if (status) {
+      last = status;
+      if (status.tunnelState === "UP") return status;
+      if (status.tunnelState === "FAILED") return status;
+      if (!status.deviceOnline) {
+        return { ...status, tunnelError: "That PC went offline." };
+      }
     }
-    await new Promise((r) => setTimeout(r, ANSWER_POLL_INTERVAL_MS));
-  }
-  return null;
-}
 
-function phaseLabel(phase: Phase): string {
-  switch (phase) {
-    case "idle":
-      return "Not connected";
-    case "requesting-ice":
-      return "Fetching relay credentials";
-    case "gathering":
-      return "Gathering network candidates";
-    case "signaling":
-      return "Sending offer";
-    case "waiting-answer":
-      return "Waiting for the PC";
-    case "connecting":
-      return "Connecting";
-    case "live":
-      return "Live";
-    case "failed":
-      return "Failed";
-    case "closed":
-      return "Disconnected";
+    onProgress("Starting secure connection…");
+    await new Promise((r) => setTimeout(r, STATUS_POLL_INTERVAL_MS));
   }
+
+  return {
+    ...last,
+    tunnelState: "FAILED",
+    tunnelError:
+      last.tunnelError ?? "The PC did not bring its tunnel up in time.",
+  };
 }

@@ -15,16 +15,16 @@ datasource db {
 // ---------- Auth (Auth.js standard models) ----------
 
 model User {
-  id            String    @id @default(cuid())
+  id            String             @id @default(cuid())
   name          String?
-  email         String    @unique
+  email         String             @unique
   emailVerified DateTime?
   image         String?
   accounts      Account[]
   sessions      Session[]
   devices       Device[]
   pushSubs      PushSubscription[]
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime           @default(now())
 }
 
 model Account {
@@ -73,26 +73,32 @@ enum DeviceStatus {
 }
 
 model Device {
-  id           String       @id @default(cuid())
-  userId       String
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name         String
-  hostname     String
-  osVersion    String
-  agentVersion String
-  tokenHash    String       @unique
-  status       DeviceStatus @default(OFFLINE)
-  lastSeenAt   DateTime?
-  monitorIndex Int          @default(0)
-  configVersion Int         @default(1)
-  pairedAt     DateTime     @default(now())
-  revokedAt    DateTime?
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  hostname      String
+  osVersion     String
+  agentVersion  String
+  tokenHash     String       @unique
+  status        DeviceStatus @default(OFFLINE)
+  lastSeenAt    DateTime?
+  monitorIndex  Int          @default(0)
+  configVersion Int          @default(1)
+  pairedAt      DateTime     @default(now())
+  revokedAt     DateTime?
+
+  // Cloudflare Tunnel identity. Provisioned manually per device (§8) and
+  // reported by the agent on poll — the console never mints these itself,
+  // which is why no Cloudflare API token has to live on the PC.
+  tunnelHostname String?
+  tunnelName     String?
 
   jobs          Job[]
   conversations Conversation[]
   watchRules    WatchRule[]
   watchEvents   WatchEvent[]
-  rtcSessions   RtcSession[]
+  viewSession   ViewSession?
 
   @@index([userId])
 }
@@ -211,28 +217,52 @@ model WatchEvent {
   @@index([deviceId, createdAt])
 }
 
-// ---------- WebRTC signaling ----------
+// ---------- Live view (Cloudflare Tunnel) ----------
 
-enum RtcStatus {
-  OFFERED
-  ANSWERED
+/// Lifecycle of the `cloudflared` process on the PC, as reported by the agent.
+enum TunnelState {
+  STARTING
+  UP
   FAILED
-  EXPIRED
-  CLOSED
+  STOPPED
 }
 
-model RtcSession {
-  id        String    @id @default(cuid())
-  deviceId  String
-  device    Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  userId    String
-  offerSdp  String    @db.Text
-  answerSdp String?   @db.Text
-  status    RtcStatus @default(OFFERED)
-  createdAt DateTime  @default(now())
-  expiresAt DateTime
+/// One row per device, created when a browser opens live view.
+///
+/// The tunnel runs ON DEMAND, not permanently: the session's heartbeat is what
+/// keeps `cloudflared` alive. Let it lapse and the agent kills the process, so
+/// the public hostname stops resolving to anything. A permanently-running
+/// tunnel would leave the PC publicly reachable 24/7.
+model ViewSession {
+  id            String      @id @default(cuid())
+  deviceId      String      @unique
+  device        Device      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId        String
+  lastHeartbeat DateTime    @default(now())
+  startedAt     DateTime    @default(now())
+  endedAt       DateTime?
+  tunnelState   TunnelState @default(STARTING)
+  tunnelError   String?
 
-  @@index([deviceId, status])
+  viewTokens ViewToken[]
+}
+
+/// Short-lived bearer token for the agent's WebSocket endpoint.
+///
+/// Only the SHA-256 hash is stored. Reusable within its TTL rather than
+/// single-use: a dropped socket would otherwise need a fresh token round-trip
+/// on every reconnect. It stays bound to one device and one user.
+model ViewToken {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ViewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  deviceId  String
+  userId    String
+  tokenHash String      @unique
+  expiresAt DateTime
+  createdAt DateTime    @default(now())
+
+  @@index([deviceId])
 }
 
 model PushSubscription {

@@ -84,9 +84,13 @@ export async function DELETE(
         },
         data: { status: "CANCELLED", completedAt: new Date() },
       }),
-      prisma.rtcSession.updateMany({
-        where: { deviceId: device.id, status: { in: ["OFFERED", "ANSWERED"] } },
-        data: { status: "CLOSED" },
+      // End any live view and kill its tokens. The agent revalidates every
+      // socket connect against the console, so this drops an in-flight viewer
+      // immediately rather than at the next heartbeat.
+      prisma.viewToken.deleteMany({ where: { deviceId: device.id } }),
+      prisma.viewSession.updateMany({
+        where: { deviceId: device.id, endedAt: null },
+        data: { endedAt: new Date(), tunnelState: "STOPPED" },
       }),
     ]);
 

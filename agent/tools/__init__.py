@@ -62,7 +62,7 @@ async def dispatch(
 
     Every tool is synchronous and several deliberately block (a 250ms CPU
     sample, a 2s download sample). Running them in the default executor keeps
-    the poll loop and any live WebRTC session responsive.
+    the poll loop and any live view session responsive.
     """
     fn = REGISTRY.get(tool_name)
     if fn is None:

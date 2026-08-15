@@ -7,9 +7,25 @@
 # expected and documented in the README.
 
 # ruff: noqa
-from PyInstaller.utils.hooks import collect_submodules
+import shutil
+from pathlib import Path
 
 block_cipher = None
+
+# cloudflared ships beside the exe (~30 MB). Looked up here at build time from
+# PATH, or from agent\cloudflared.exe if you dropped a copy in. tunnel.py finds
+# it again at runtime by checking the same places.
+_cloudflared = shutil.which("cloudflared") or str(
+    Path(SPECPATH) / "cloudflared.exe"
+)
+_binaries = []
+if Path(_cloudflared).is_file():
+    _binaries.append((_cloudflared, "."))
+else:
+    print(
+        "  WARNING: cloudflared.exe was not found, so live view will not work "
+        "in this build. Install cloudflared or place it in agent\\."
+    )
 
 hidden_imports = [
     # keyring resolves its backend at runtime by entry point, which PyInstaller
@@ -26,15 +42,20 @@ hidden_imports = [
     "pystray._win32",
 ]
 
-# aiortc and av pull in a large native tree; collecting submodules avoids a
-# long tail of "module not found" failures at runtime.
-hidden_imports += collect_submodules("aiortc")
-hidden_imports += collect_submodules("av")
+# The live-view stack is imported lazily inside main.py, so PyInstaller cannot
+# see it from the import graph.
+hidden_imports += [
+    "aiohttp",
+    "server.app",
+    "server.tunnel",
+    "server.capture",
+    "server.input",
+]
 
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=_binaries,
     datas=[],
     hiddenimports=hidden_imports,
     hookspath=[],

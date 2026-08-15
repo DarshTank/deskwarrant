@@ -38,14 +38,28 @@ def log_path() -> Path:
 
 
 @dataclass
-class CaptureConfig:
+class ViewConfig:
+    """Live-view settings: the local server, the tunnel, and the encoder.
+
+    `tunnel_name` and `hostname` come from the one-time `cloudflared` setup and
+    are filled in by hand (see the README). Provisioning them automatically
+    would mean storing a Cloudflare API token on the PC, which is a worse trade
+    than a manual step on a handful of personal devices.
+    """
+
+    tunnel_name: str = ""
+    hostname: str = ""
+    local_port: int = 47821
     tile_size: int = 128
     target_fps: int = 10
     webp_quality: int = 70
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "CaptureConfig":
+    def from_dict(cls, raw: dict[str, Any]) -> "ViewConfig":
         return cls(
+            tunnel_name=str(raw.get("tunnelName", "")).strip(),
+            hostname=str(raw.get("hostname", "")).strip().rstrip("/"),
+            local_port=int(raw.get("localPort", 47821)),
             tile_size=int(raw.get("tileSize", 128)),
             target_fps=int(raw.get("targetFps", 10)),
             webp_quality=int(raw.get("webpQuality", 70)),
@@ -53,10 +67,31 @@ class CaptureConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "tunnelName": self.tunnel_name,
+            "hostname": self.hostname,
+            "localPort": self.local_port,
             "tileSize": self.tile_size,
             "targetFps": self.target_fps,
             "webpQuality": self.webp_quality,
         }
+
+    @property
+    def configured(self) -> bool:
+        """False until the manual Cloudflare setup has been recorded here.
+
+        Checked before the agent claims live view is available, so an
+        unconfigured device reports a clear error instead of starting a tunnel
+        that can never resolve.
+        """
+        return bool(self.tunnel_name and self.hostname)
+
+    @property
+    def health_url(self) -> str:
+        return f"https://{self.hostname}/health"
+
+    @property
+    def local_health_url(self) -> str:
+        return f"http://127.0.0.1:{self.local_port}/health"
 
 
 @dataclass
@@ -64,7 +99,7 @@ class AgentConfig:
     console_url: str = ""
     poll_interval_ms: int = 2000
     allowed_roots: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWED_ROOTS))
-    capture: CaptureConfig = field(default_factory=CaptureConfig)
+    view: ViewConfig = field(default_factory=ViewConfig)
     device_id: str | None = None
     monitor_index: int = 0
 
@@ -82,11 +117,15 @@ class AgentConfig:
             # and let the user re-pair rather than crash-looping at startup.
             return cls()
 
+        # "capture" is the pre-tunnel key for the same encoder settings; read it
+        # as a fallback so an existing install keeps its tuning across upgrade.
+        view_raw = raw.get("view") or raw.get("capture") or {}
+
         return cls(
             console_url=str(raw.get("consoleUrl", "")).rstrip("/"),
             poll_interval_ms=int(raw.get("pollIntervalMs", 2000)),
             allowed_roots=list(raw.get("allowedRoots", DEFAULT_ALLOWED_ROOTS)),
-            capture=CaptureConfig.from_dict(raw.get("capture", {})),
+            view=ViewConfig.from_dict(view_raw),
             device_id=raw.get("deviceId"),
             monitor_index=int(raw.get("monitorIndex", 0)),
         )
@@ -98,7 +137,7 @@ class AgentConfig:
             "consoleUrl": self.console_url,
             "pollIntervalMs": self.poll_interval_ms,
             "allowedRoots": self.allowed_roots,
-            "capture": self.capture.to_dict(),
+            "view": self.view.to_dict(),
             "deviceId": self.device_id,
             "monitorIndex": self.monitor_index,
         }

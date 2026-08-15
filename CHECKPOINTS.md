@@ -13,7 +13,7 @@ verified without a real Neon database, Google OAuth client, and Groq key.
 
 ```bash
 cd console
-npx prisma migrate dev --name init   # must succeed against Neon
+npx prisma migrate deploy   # applies 0_init, then tunnel_transport
 npm run dev
 ```
 
@@ -22,16 +22,19 @@ cd agent
 .\.venv\Scripts\python.exe main.py   # first run prompts for URL + pairing code
 ```
 
-**Sanity check that needs no credentials** — the agent's own test suite:
+**Sanity checks that need no credentials** — the agent's own test suites:
 
 ```powershell
 cd agent
 .\.venv\Scripts\python.exe ..\tests\smoke_test.py
+.\.venv\Scripts\python.exe ..\tests\view_server_test.py
 ```
 
-Expect `56 passed, 0 failed`. This covers imports, the full tool registry,
-the path allowlist, tile diffing, the wire format, input mapping, and the watch
-evaluator — everything that does not require the console to be reachable.
+Expect `59 passed, 0 failed` and `9 passed, 0 failed`. Between them they cover
+imports, the full tool registry, the path allowlist, tile diffing, the wire
+format, input mapping, the watch evaluator, and the live-view server's token
+gate — everything that does not require the console or Cloudflare to be
+reachable.
 
 ---
 
@@ -118,31 +121,42 @@ report the folder name, and may note that it looks like an injection attempt.
 
 ---
 
-## Stage 4 — DataChannel
+## Stage 4 — Tunnel transport
 
-Open a device → **Live** tab → **Start live view**.
+Complete the one-time Cloudflare setup in the README first, then open a device →
+**Live** tab → **Start live view**.
 
-1. Works with the browser and PC on the **same Wi-Fi**.
-2. **Works with the browser on mobile data and the PC on home Wi-Fi.** This is
-   the one that proves TURN is actually working.
-3. Connection establishes within ~5 seconds.
-4. Closing the tab tears the session down cleanly and the agent returns to idle
-   (the log shows `RTC session … closed`).
+1. The tunnel comes up **within 6 seconds** of pressing Start, and
+   `ViewSession.tunnelState` reaches `UP` (check in Prisma Studio, or watch the
+   header text stop saying "Starting secure connection…").
+2. **Live view renders at full frame rate with the PC on home Wi-Fi and the
+   phone on mobile data.** This is the case the old peer-to-peer architecture
+   could not handle without a paid relay — confirm it now runs at full speed,
+   not at some degraded rate.
+3. Hit the WebSocket URL with **no token**, and with an **expired token** →
+   both rejected with close code 4401 and **zero frames sent**.
+   (`tests\view_server_test.py` covers this against the local server; do it once
+   through the public hostname too.)
+4. Close the tab → within ~20 seconds the `cloudflared` process is **gone from
+   Task Manager** and the public hostname no longer serves. Verify the process
+   actually exits — an orphan would leave the PC publicly reachable.
+5. Kill `cloudflared` mid-session → the UI reports the failure clearly and
+   offers retry, **and chat still works**.
 
-**If step 2 fails**, open `chrome://webrtc-internals` during the attempt and look
-at the candidate list. **No `relay` candidates means the TURN credential path is
-broken** — check `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN`. The
-console degrades to STUN-only and shows a warning banner when TURN is
-unconfigured, so read that banner first.
-
-The ICE state is shown live in the Live tab header during development.
+**If step 2 fails**, check in this order: does `https://<hostname>/health`
+return 200 while a session is open; is the agent's log showing
+`Tunnel is up at …`; does `%USERPROFILE%\.cloudflared\config.yml` point at the
+same `localPort` as the agent config. There is deliberately **no fallback view
+mode** — a tunnel failure means something is genuinely broken and gets surfaced
+rather than papered over.
 
 ---
 
 ## Stage 5 — Frame loop
 
 1. Leave the desktop static → bandwidth drops to **near zero**. Verify in
-   `chrome://webrtc-internals` (`dataChannelBytesReceived` stops climbing).
+   DevTools → Network → the `/stream` WebSocket, whose message list stops
+   growing.
 2. Type in Notepad → only the affected region updates.
 3. Drag a window around → choppy, but it does not stall or desync.
 4. Sustained use stays under roughly 500 KB/s.
@@ -150,6 +164,9 @@ The ICE state is shown live in the Live tab header during development.
 **Pass condition:** static desktop costs nothing, and the picture never
 permanently desyncs. A full keyframe is sent every 5 seconds and on demand via
 the **Refresh** button, so any lost tile self-heals within 5s.
+
+> Tile diffing is also asserted offline by `smoke_test.py` — a static frame
+> encodes to `None`, and a single changed region to one tile.
 
 ---
 
@@ -203,6 +220,9 @@ Start-ScheduledTask -TaskName "DeskWarrant Agent"
 2. The scheduled task starts it at logon.
 3. The tray icon shows connection status (green online, indigo live).
 4. SmartScreen warns on the unsigned binary — expected, documented.
+5. Live view works from the packaged exe, which proves `cloudflared.exe` was
+   bundled beside it. The spec prints a warning at build time if it could not
+   find one to bundle — do not ignore it.
 
 **Pass condition:** the packaged agent pairs and reconnects at logon without a
 Python install present.

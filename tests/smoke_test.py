@@ -50,9 +50,10 @@ check("import transport", lambda: __import__("transport"))
 check("import pairing", lambda: __import__("pairing"))
 check("import tools", lambda: __import__("tools"))
 check("import watch.rules", lambda: __import__("watch.rules", fromlist=["x"]))
-check("import rtc.capture", lambda: __import__("rtc.capture", fromlist=["x"]))
-check("import rtc.input", lambda: __import__("rtc.input", fromlist=["x"]))
-check("import rtc.session", lambda: __import__("rtc.session", fromlist=["x"]))
+check("import server.capture", lambda: __import__("server.capture", fromlist=["x"]))
+check("import server.input", lambda: __import__("server.input", fromlist=["x"]))
+check("import server.app", lambda: __import__("server.app", fromlist=["x"]))
+check("import server.tunnel", lambda: __import__("server.tunnel", fromlist=["x"]))
 check("import tray", lambda: __import__("tray"))
 check("import main", lambda: __import__("main"))
 
@@ -226,7 +227,7 @@ print("=" * 70)
 
 def test_encoder():
     from PIL import Image
-    from rtc.capture import FrameEncoder
+    from server.capture import FrameEncoder
 
     enc = FrameEncoder(tile_size=128, quality=70)
     img = Image.new("RGB", (640, 480), (20, 20, 30))
@@ -298,7 +299,7 @@ print("=" * 70)
 
 
 def test_capture():
-    from rtc.capture import FrameEncoder, ScreenGrabber
+    from server.capture import FrameEncoder, ScreenGrabber
 
     grab = ScreenGrabber(0)
     try:
@@ -326,7 +327,7 @@ print("=" * 70)
 
 
 def test_input():
-    from rtc.input import _EXTENDED, _SCANCODES, InputInjector
+    from server.input import _EXTENDED, _SCANCODES, InputInjector
 
     inj = InputInjector({})
     assert inj._absolute(0.0, 0.0) == (0, 0)
@@ -411,14 +412,32 @@ print("=" * 70)
 
 
 def test_config():
-    from config import CaptureConfig
+    from config import ViewConfig
     c = AgentConfig(console_url="https://x.vercel.app/", poll_interval_ms=2000,
-                    capture=CaptureConfig(tile_size=128, target_fps=10,
-                                          webp_quality=70))
-    d = c.capture.to_dict()
-    assert d == {"tileSize": 128, "targetFps": 10, "webpQuality": 70}
-    assert CaptureConfig.from_dict(d).tile_size == 128
-    PASSES.append("capture config round trip matches the §12 JSON shape")
+                    view=ViewConfig(tunnel_name="deskwarrant-test-pc",
+                                    hostname="pc-7f2a.example.com",
+                                    local_port=47821, tile_size=128,
+                                    target_fps=10, webp_quality=70))
+    d = c.view.to_dict()
+    assert d == {"tunnelName": "deskwarrant-test-pc",
+                 "hostname": "pc-7f2a.example.com", "localPort": 47821,
+                 "tileSize": 128, "targetFps": 10, "webpQuality": 70}
+    assert ViewConfig.from_dict(d).tile_size == 128
+    assert c.view.configured
+    assert c.view.health_url == "https://pc-7f2a.example.com/health"
+    PASSES.append("view config round trip matches the migration §7 JSON shape")
+
+    # An unconfigured device must be detectable before a tunnel is attempted.
+    assert not ViewConfig().configured
+    PASSES.append("view config reports unconfigured when the tunnel is unset")
+
+    # The pre-tunnel "capture" block carried these same three keys, so an
+    # upgraded install keeps its tuning instead of silently resetting.
+    legacy = ViewConfig.from_dict({"tileSize": 64, "targetFps": 5,
+                                   "webpQuality": 40})
+    assert (legacy.tile_size, legacy.target_fps, legacy.webp_quality) == (64, 5, 40)
+    assert not legacy.configured
+    PASSES.append("legacy capture settings still parse into ViewConfig")
 
 
 check("config", test_config)

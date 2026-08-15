@@ -34,10 +34,20 @@ class TransportError(Exception):
 @dataclass
 class PollResult:
     jobs: list[dict[str, Any]] = field(default_factory=list)
-    rtc_offers: list[dict[str, Any]] = field(default_factory=list)
     watch_rules: list[dict[str, Any]] | None = None  # None = unchanged
     poll_interval_ms: int = 2000
     config_version: int = 0
+    # `view.active` is what starts and stops the tunnel. Absent means inactive.
+    view: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def view_active(self) -> bool:
+        return bool(self.view.get("active"))
+
+    @property
+    def view_session_id(self) -> str | None:
+        value = self.view.get("sessionId")
+        return str(value) if value else None
 
 
 class Transport:
@@ -108,11 +118,11 @@ class Transport:
         )
         return PollResult(
             jobs=data.get("jobs") or [],
-            rtc_offers=data.get("rtcOffers") or [],
             # An absent key means "unchanged"; an empty list means "no rules".
             watch_rules=data.get("watchRules"),
             poll_interval_ms=int(data.get("pollIntervalMs", 2000)),
             config_version=int(data.get("configVersion", 0)),
+            view=data.get("view") or {},
         )
 
     async def post_job_result(
@@ -128,12 +138,39 @@ class Transport:
             payload = {"status": "DONE", "result": result}
         await self._request("POST", f"/api/agent/jobs/{job_id}/result", json=payload)
 
-    async def post_rtc_answer(self, session_id: str, answer_sdp: str) -> None:
-        await self._request(
-            "POST",
-            f"/api/agent/rtc/{session_id}/answer",
-            json={"answerSdp": answer_sdp},
+    async def post_view_state(
+        self,
+        tunnel_state: str,
+        *,
+        tunnel_error: str | None = None,
+        tunnel_hostname: str | None = None,
+        tunnel_name: str | None = None,
+    ) -> None:
+        """Report tunnel status, and the device's tunnel identity, to the console.
+
+        The hostname rides along here rather than through a separate call: the
+        console needs it to build the browser's `wsUrl`, and this is the only
+        moment the agent has anything new to say about it.
+        """
+        payload: dict[str, Any] = {"tunnelState": tunnel_state}
+        if tunnel_error:
+            payload["tunnelError"] = tunnel_error[:500]
+        if tunnel_hostname:
+            payload["tunnelHostname"] = tunnel_hostname
+        if tunnel_name:
+            payload["tunnelName"] = tunnel_name
+        await self._request("POST", "/api/agent/view/state", json=payload)
+
+    async def verify_view_token(self, token: str) -> bool:
+        """Ask the console whether a token presented on the socket is good.
+
+        Checked against the console on every connect rather than a local cache,
+        so revoking the device or ending the session kills live tokens at once.
+        """
+        data = await self._request(
+            "POST", "/api/agent/view-token/verify", json={"token": token}
         )
+        return bool(data.get("valid"))
 
     async def post_events(self, events: list[dict[str, Any]]) -> None:
         if not events:
