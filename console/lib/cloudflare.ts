@@ -150,7 +150,7 @@ export async function provisionTunnel(
       }),
     });
 
-    const { token } = await callApi<{ token: string }>(
+    const token = await callApi<string>(
       `/accounts/${accountId}/cfd_tunnel/${tunnel.id}/token`,
       { method: "GET" },
     );
