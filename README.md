@@ -312,3 +312,5 @@ behind an explicit per-device opt-in.
 
 See [CHECKPOINTS.md](CHECKPOINTS.md) for the per-stage verification procedure.
 Each stage has a concrete, manually verifiable condition — run them in order.
+#   d e s k w a r r a n t  
+ 
