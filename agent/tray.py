@@ -10,7 +10,7 @@ import logging
 import os
 import subprocess
 import threading
-from typing import Callable
+from typing import Any, Callable
 
 from PIL import Image, ImageDraw
 
@@ -23,6 +23,7 @@ _COLOURS = {
     "live": (99, 102, 241),
     "offline": (161, 161, 170),
     "connecting": (245, 158, 11),
+    "pairing": (245, 158, 11),
 }
 
 
@@ -40,9 +41,18 @@ def _icon_image(status: str) -> Image.Image:
 
 
 class TrayIcon:
-    def __init__(self, status_fn: Callable[[], str], config: AgentConfig) -> None:
+    def __init__(
+        self,
+        status_fn: Callable[[], str],
+        config: AgentConfig,
+        claim_fn: Callable[[], Any] | None = None,
+    ) -> None:
         self._status_fn = status_fn
         self._config = config
+        # Returns the outstanding pairing claim, or None. This is the only way
+        # to finish pairing on a PC started by Task Scheduler, where nothing is
+        # printed anywhere a person will look.
+        self._claim_fn = claim_fn or (lambda: None)
         self._icon = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -53,6 +63,19 @@ class TrayIcon:
         menu = pystray.Menu(
             pystray.MenuItem(lambda _item: f"Status: {self._status_fn()}", None,
                              enabled=False),
+            # Both pairing entries hide themselves once the claim is answered,
+            # so the menu is unchanged in normal operation.
+            pystray.MenuItem(
+                lambda _item: f"Approval code: {self._claim_code()}",
+                None,
+                enabled=False,
+                visible=lambda _item: self._claim_fn() is not None,
+            ),
+            pystray.MenuItem(
+                "Finish pairing…",
+                self._open_approval,
+                visible=lambda _item: self._claim_fn() is not None,
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open console", self._open_console),
             pystray.MenuItem("Open config folder", self._open_config_dir),
@@ -92,6 +115,15 @@ class TrayIcon:
                 pass
 
     # ---------- menu actions ----------
+
+    def _claim_code(self) -> str:
+        claim = self._claim_fn()
+        return claim.match_code if claim is not None else ""
+
+    def _open_approval(self, *_args: object) -> None:
+        claim = self._claim_fn()
+        if claim is not None:
+            _open(claim.approve_url)
 
     def _open_console(self, *_args: object) -> None:
         if self._config.console_url:

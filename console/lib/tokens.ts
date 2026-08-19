@@ -21,6 +21,51 @@ export function generateDeviceToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+/**
+ * The agent's proof that it owns a pairing claim, presented to redeem it.
+ *
+ * Same shape and strength as a device token because it is the same kind of
+ * thing: a bearer credential that is never displayed and never typed. That is
+ * the whole reason it can be 32 bytes where a pairing code has to be 6
+ * characters a human can read off a screen without mistakes.
+ */
+export function generateClaimSecret(): string {
+  return randomBytes(32).toString("hex");
+}
+
+const MATCH_CODE_LENGTH = 4;
+const MATCH_CHOICE_COUNT = 4;
+
+/**
+ * One code for the PC to display, plus decoys, shuffled into the set the
+ * approval page renders.
+ *
+ * Four choices rather than three because the extra decoy is free and drops a
+ * blind guess from 33% to 25%. The real defence is that someone with no code
+ * in front of them should press Deny, not guess -- a wrong pick kills the claim
+ * outright, so there is exactly one attempt.
+ */
+export function generateMatchCodes(): { matchCode: string; choices: string[] } {
+  const codes = new Set<string>();
+  while (codes.size < MATCH_CHOICE_COUNT) {
+    let code = "";
+    for (let i = 0; i < MATCH_CODE_LENGTH; i++) {
+      code += PAIRING_ALPHABET[randomInt(PAIRING_ALPHABET.length)];
+    }
+    codes.add(code);
+  }
+
+  const choices = [...codes];
+  // Fisher-Yates with a CSPRNG: Math.random() would make the correct position
+  // predictable from the claim's creation time.
+  for (let i = choices.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [choices[i], choices[j]] = [choices[j], choices[i]];
+  }
+
+  return { matchCode: choices[randomInt(choices.length)], choices };
+}
+
 /** Only the hash is ever persisted (build plan §11). */
 export function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");

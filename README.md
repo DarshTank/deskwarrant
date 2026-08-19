@@ -159,12 +159,38 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-On first run it asks for the console URL and a pairing code. Generate the code in
-the console (**Devices → Generate pairing code**), type it in, and the PC appears
-as ONLINE.
+On first run the agent opens your browser to an approval screen and prints a
+four-character code. Pick the matching code in the console and the PC appears as
+ONLINE. Nothing is typed.
+
+The direction matters: the PC asks to join, and you approve. The older flow —
+console mints a code, you carry it to the PC — made a human the transport for a
+secret, which is why it needed a terminal to prompt on and why the agent could
+not be installed as a scheduled task before it was paired.
+
+**The match code is an anti-phishing step, not a password.** Anyone can open a
+claim, so being sent someone else's approval link is the attack to design out. A
+person looking at the PC can answer the challenge; a person who was sent a link
+cannot, and a wrong pick denies the request outright rather than allowing
+another guess.
+
+Two fallbacks, in order of how often you will need them:
+
+- **No browser opens** (Task Scheduler, RDP, no default browser) — the link and
+  code are printed, written to `agent.log`, and reachable from the tray icon's
+  *Finish pairing…* item. Open it on your phone.
+- **No browser anywhere near the PC** — reveal *Pair with a typed code instead*
+  in the console and run `main.py --pair --code ABC123`.
+
+Set `DESKWARRANT_CONSOLE_URL`, or bake `DEFAULT_CONSOLE_URL` into
+[agent/config.py](agent/config.py) at build time, so a fresh install has nothing
+to type at all. Without it the agent asks for the console URL once.
 
 The device token is stored in **Windows Credential Manager** under the service
-name `DeskWarrant` — never in `config.json`, never in the repo.
+name `DeskWarrant` — never in `config.json`, never in the repo. The claim secret
+that redeems a pairing request is treated the same way: 32 random bytes, hashed
+at rest, and never displayed, which is exactly why it can be 32 bytes where a
+typed code has to be six readable characters.
 
 Agent config lives at `%LOCALAPPDATA%\DeskWarrant\config.json`:
 
@@ -236,7 +262,9 @@ cloudflared tunnel --no-autoupdate run deskwarrant-darsh-pc
 > guarantee, cap in-flight requests at 200, and do not support Server-Sent
 > Events — which the assistant's chat streams over.
 
-### 4. Package and autostart (optional)
+### 4. Package and autostart
+
+For yourself, from source:
 
 ```powershell
 cd agent
@@ -245,8 +273,57 @@ cd agent
 ```
 
 `install.ps1` registers a Scheduled Task named **DeskWarrant Agent** that runs at
-logon, unelevated. Pair the agent interactively *before* installing the task —
-Task Scheduler gives it no console to prompt on.
+logon, unelevated. Pairing order no longer matters: the agent surfaces its
+approval link through the tray icon, so an unpaired PC can be installed first
+and approved afterwards.
+
+For everyone else, see **Shipping to other people** below.
+
+---
+
+## Shipping to other people
+
+Someone who signs up has no repo, no Python, and no terminal. The chain that
+gets the agent onto their PC is built entirely from free tools.
+
+**Build** — [`.github/workflows/release.yml`](.github/workflows/release.yml)
+runs on `windows-latest` when you push a `v*` tag. It fetches `cloudflared`,
+bakes the console URL in, runs PyInstaller, builds the installer with Inno
+Setup, and publishes all three artifacts to a GitHub Release.
+
+One-time setup: add a repository **variable** named `CONSOLE_URL` under
+*Settings → Secrets and variables → Actions → Variables*, holding the console's
+public URL. The workflow fails with an explicit message if it is missing, rather
+than shipping a binary that prompts the user for a URL.
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+**Distribute** — `GET /api/download` redirects to
+`releases/latest/download/DeskWarrantSetup.exe`. A redirect and not a proxy: the
+binary is ~60 MB, far past what a serverless function may return, so GitHub
+serves the bytes and Vercel serves a few hundred of them. GitHub resolves
+`latest` itself, so shipping a new version never touches the console.
+
+> **The repository must be public** for this to work. Release assets on a
+> private repo require authentication, and a new user's browser has none.
+
+**Install** — [`agent/installer.iss`](agent/installer.iss) installs per-user into
+`%LOCALAPPDATA%\Programs`, so there is **no UAC prompt at any point**. That is
+not only friendlier: the agent is deliberately unelevated, and asking for admin
+to install it would claim a privilege the product neither wants nor uses. The
+installer registers the logon task, adds an Add/Remove Programs entry, and
+launches the agent, which flows straight into pairing.
+
+**What this does not solve: SmartScreen.** The binary is unsigned, so Windows
+shows *"Windows protected your PC"* and hides *Run anyway* behind *More info*.
+`/download` shows users exactly that, in advance — an ambush converts far worse
+than a warning. Certificates cost real money (OV ~$200–400/yr; EV, the one that
+clears SmartScreen immediately, ~$300–600/yr plus a hardware token). The one
+free route is **SignPath Foundation**, which signs open-source projects at no
+cost and is worth an application now that the repo is public.
 
 ---
 
@@ -255,6 +332,8 @@ Task Scheduler gives it no console to prompt on.
 | Concern | Control |
 |---|---|
 | Device authentication | 32-byte random token, SHA-256 hashed at rest, stored agent-side in Windows Credential Manager, revocable from the dashboard |
+| Pairing | The PC opens a claim and gets a 32-byte secret; approving only marks the claim, so no device token exists anywhere — not even encrypted — until the agent returns and proves it holds that secret. Claims expire in 10 minutes and are rate-limited per source IP, the one endpoint that writes with no credential at all. |
+| Pairing consent | A four-character code shown on the PC, matched against four choices in the console. One attempt: a wrong pick denies the claim. This is what stops a device-flow phishing link from enrolling a stranger's PC into your account. |
 | Authorization | Every device-scoped handler verifies `device.userId === session.user.id`. There is no sharing model; this check is the entire authorization layer. |
 | Privilege | The agent runs **unelevated**. It cannot touch the lock screen, UAC, or elevate anything. This is a deliberate blast-radius limit. |
 | Prompt injection | Window titles, filenames, and UI text are untrusted input. The model selects from a fixed typed tool catalog and never emits shell or code. Arguments are validated with Zod server-side and re-validated agent-side. |
@@ -290,7 +369,12 @@ injection saying "kill PID 4" fails closed.
 - **Primary monitor only.** A `monitorIndex` field is plumbed through so
   multi-monitor is a contained change later.
 - The unsigned agent binary **triggers a SmartScreen warning** on download. Click
-  *More info → Run anyway*, or sign the binary.
+  *More info → Run anyway*, or sign the binary. Some antivirus engines also flag
+  PyInstaller bundles heuristically, because malware authors use PyInstaller too.
+- Every paired PC gets its own Cloudflare tunnel and DNS record **on your zone,
+  provisioned with your API token**. Fine at personal scale; it is the first
+  thing that breaks if the app gets real users, along with Groq usage, which all
+  runs on the operator's single key.
 - A chat turn runs inside a Vercel function capped at 60 seconds. Normal turns
   take 4–6 seconds; the ceiling only matters if the PC drops offline mid-turn.
 

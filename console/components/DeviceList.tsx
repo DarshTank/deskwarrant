@@ -69,8 +69,8 @@ export function DeviceList() {
         <div className="mb-8 rounded-xl border border-border bg-surface p-6">
           <h2 className="text-sm font-medium">No devices paired yet</h2>
           <p className="mt-1 text-sm text-muted">
-            Run the agent on your Windows PC, then generate a code below and
-            enter it when the agent asks.
+            Run the agent on your Windows PC. It will open this console and ask
+            you to approve it.
           </p>
         </div>
       )}

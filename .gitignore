@@ -19,9 +19,14 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# --- pyinstaller ---
+# --- pyinstaller / installer ---
 agent/build/
 agent/dist/
+agent/Output/
+# Bundled into the exe at build time; ~30 MB, fetched by the release workflow.
+agent/cloudflared.exe
+# Generated per build: holds the console URL baked into the binary.
+agent/_build_config.py
 
 # --- agent runtime state (also lives in %LOCALAPPDATA%, never in the repo) ---
 agent/config.json

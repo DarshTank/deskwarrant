@@ -3,9 +3,33 @@ import { auth, signIn } from "@/lib/auth";
 
 export const metadata = { title: "Sign in · DeskWarrant" };
 
-export default async function SignInPage() {
+/**
+ * The only destination sign-in ever needs to preserve is a pairing approval, so
+ * `next` is matched against that exact shape rather than filtered for things
+ * that look dangerous.
+ *
+ * An allowlist is the difference between safe and nearly safe here. Checking
+ * "starts with / but not //" reads airtight and is not: browsers normalise
+ * backslashes to forward slashes, so `/\evil.com` becomes `//evil.com` and
+ * redirects off-site. Anchoring the whole string leaves no room for a scheme,
+ * a host, or an encoding trick.
+ */
+const NEXT_PATTERN = /^\/pair\/[A-Za-z0-9_-]{1,64}$/;
+
+function safeNext(value: string | string[] | undefined): string {
+  if (typeof value !== "string") return "/devices";
+  return NEXT_PATTERN.test(value) ? value : "/devices";
+}
+
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const next = safeNext((await searchParams).next);
+
   const session = await auth();
-  if (session?.user) redirect("/devices");
+  if (session?.user) redirect(next);
 
   return (
     <main className="flex-1 grid place-items-center px-6 py-16">
@@ -21,7 +45,7 @@ export default async function SignInPage() {
           <form
             action={async () => {
               "use server";
-              await signIn("google", { redirectTo: "/devices" });
+              await signIn("google", { redirectTo: next });
             }}
           >
             <button

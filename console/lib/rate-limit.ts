@@ -25,6 +25,14 @@ export const LIMITS = {
   messagesPerUserPerDay: 200,
   /** Devices one user may have paired at once. Also caps tunnel provisioning. */
   devicesPerUser: 5,
+  /**
+   * Pairing claims one source IP may open per hour.
+   *
+   * `POST /api/agent/claim` is the only endpoint that writes a row with no
+   * credential of any kind, so it needs its own ceiling. Set high enough that
+   * repeatedly re-pairing a PC during setup never trips it.
+   */
+  claimsPerIpPerHour: 60,
 } as const;
 
 export async function assertJobQuota(deviceId: string, incoming: number) {
@@ -90,6 +98,25 @@ export async function assertDeviceQuota(userId: string) {
       tooManyRequests(
         `You can pair up to ${LIMITS.devicesPerUser} PCs. Revoke one to add another.`,
       ),
+    );
+  }
+}
+
+/**
+ * Cap unauthenticated pairing claims per source IP.
+ *
+ * Requests with no forwarded IP share one bucket rather than bypassing the
+ * check: on Vercel the header is always set by the platform, so an absent one
+ * means local development, and lumping those together is the safe reading.
+ */
+export async function assertClaimQuota(sourceIp: string | null) {
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const used = await prisma.pairingClaim.count({
+    where: { sourceIp: sourceIp ?? null, createdAt: { gte: since } },
+  });
+  if (used >= LIMITS.claimsPerIpPerHour) {
+    throw new HttpError(
+      tooManyRequests("Too many pairing attempts. Try again in an hour."),
     );
   }
 }

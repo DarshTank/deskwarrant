@@ -2,6 +2,7 @@
 
 Run from source:   python main.py
 Force re-pairing:  python main.py --pair
+Pair with a code:  python main.py --pair --code ABC123
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import logging.handlers
+import os
 import sys
 import time
 from typing import Any
@@ -24,6 +26,48 @@ from watch.rules import EVALUATION_INTERVAL_S, WatchEvaluator
 log = logging.getLogger("deskwarrant")
 
 
+def ensure_streams() -> None:
+    """Give a windowed build somewhere to write.
+
+    PyInstaller's `console=False` leaves sys.stdout and sys.stderr as None, and
+    `print()` against None raises. Rather than auditing every print in the
+    agent, point the missing streams at the null device once -- the log file and
+    the tray icon are the real output in that build anyway.
+    """
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name, None) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
+def fatal(message: str) -> None:
+    """Report an error that ends the run, wherever the user can actually see it.
+
+    A windowed build has no console, so an unpaired PC would otherwise fail in
+    complete silence -- the agent would simply never appear.
+    """
+    log.error("%s", message)
+    print(f"\n  {message}\n")
+    if windowed():
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                0, message, "DeskWarrant", 0x10  # MB_ICONERROR
+            )
+        except Exception:  # noqa: BLE001
+            log.debug("Could not show an error dialog", exc_info=True)
+
+
+def windowed() -> bool:
+    """True in a frozen build with no console attached."""
+    if not getattr(sys, "frozen", False):
+        return False
+    try:
+        return not (sys.__stdout__ and sys.__stdout__.isatty())
+    except (AttributeError, ValueError):
+        return True
+
+
 def setup_logging(verbose: bool = False) -> None:
     config_dir().mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if verbose else logging.INFO
@@ -31,11 +75,14 @@ def setup_logging(verbose: bool = False) -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(
-        logging.Formatter("%(asctime)s  %(levelname)-7s %(message)s", "%H:%M:%S")
-    )
-    root.addHandler(console_handler)
+    # Skipped in a windowed build: sys.stdout is the null device there, so the
+    # handler would burn formatting work on output nobody can read.
+    if not windowed():
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(
+            logging.Formatter("%(asctime)s  %(levelname)-7s %(message)s", "%H:%M:%S")
+        )
+        root.addHandler(console_handler)
 
     file_handler = logging.handlers.RotatingFileHandler(
         log_path(), maxBytes=1_000_000, backupCount=2, encoding="utf-8"
@@ -275,6 +322,58 @@ class Agent:
             await asyncio.sleep(poll.poll_interval_ms / 1000.0)
 
 
+class AgentState:
+    """What the tray icon reads.
+
+    Pairing now happens with the tray already up -- that is the whole point of
+    the claim flow, since a PC with no console needs the tray to surface the
+    approval link. So the tray cannot read `Agent.status` directly: the Agent
+    does not exist yet during pairing.
+    """
+
+    def __init__(self) -> None:
+        self._phase = "connecting"
+        self._agent: Agent | None = None
+        self.claim: pairing.Claim | None = None
+
+    @property
+    def status(self) -> str:
+        return self._agent.status if self._agent is not None else self._phase
+
+    def set_phase(self, phase: str) -> None:
+        self._phase = phase
+
+    def bind(self, agent: Agent) -> None:
+        self._agent = agent
+
+
+def _start_tray(state: AgentState, config: AgentConfig) -> Any:
+    try:
+        from tray import TrayIcon
+
+        tray = TrayIcon(lambda: state.status, config, lambda: state.claim)
+        tray.start()
+        return tray
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Tray icon unavailable: %s", exc)
+        return None
+
+
+async def _run_pairing(
+    args: argparse.Namespace, config: AgentConfig, state: AgentState
+) -> str:
+    print()
+    print("  DeskWarrant agent setup")
+    print("  " + "-" * 34)
+
+    def on_claim(claim: pairing.Claim | None) -> None:
+        state.claim = claim
+
+    if args.code or args.typed_code:
+        return await pairing.code_pair(config, args.code)
+    return await pairing.claim_pair(config, on_claim=on_claim)
+
+
 async def bootstrap(args: argparse.Namespace) -> int:
     config = AgentConfig.load()
 
@@ -282,53 +381,51 @@ async def bootstrap(args: argparse.Namespace) -> int:
         config.console_url = args.console_url.rstrip("/")
         config.save()
 
-    token = None if args.pair else credentials.get_token()
-
-    if args.pair or not token or not config.console_url:
-        if args.pair:
-            credentials.clear_token()
-        print()
-        print("  DeskWarrant agent setup")
-        print("  " + "-" * 34)
-        try:
-            token = await pairing.interactive_pair(config)
-        except (KeyboardInterrupt, EOFError):
-            print("\n  Setup cancelled.")
-            return 1
-
-    config = AgentConfig.load()  # pick up anything pairing wrote
-    transport = Transport(config, token)
-    agent = Agent(config, transport)
-
-    tray = None
-    if not args.no_tray:
-        try:
-            from tray import TrayIcon
-
-            tray = TrayIcon(lambda: agent.status, config)
-            tray.start()
-        except Exception as exc:  # noqa: BLE001
-            log.debug("Tray icon unavailable: %s", exc)
+    state = AgentState()
+    tray = None if args.no_tray else _start_tray(state, config)
 
     try:
-        await agent.run()
-    except AuthRevoked:
-        log.error("This device was revoked in the console. Clearing credentials.")
-        credentials.clear_token()
-        print()
-        print("  This PC was removed from your DeskWarrant account.")
-        print("  Run the agent again to pair it back.")
-        return 2
-    except KeyboardInterrupt:
-        log.info("Shutting down")
-        return 0
+        token = None if args.pair else credentials.get_token()
+
+        if args.pair or not token or not config.console_url:
+            if args.pair:
+                credentials.clear_token()
+            state.set_phase("pairing")
+            try:
+                token = await _run_pairing(args, config, state)
+            except pairing.PairingFailed as exc:
+                fatal(str(exc))
+                return 1
+            except (KeyboardInterrupt, EOFError):
+                print("\n  Setup cancelled.")
+                return 1
+
+        state.set_phase("connecting")
+        config = AgentConfig.load()  # pick up anything pairing wrote
+        transport = Transport(config, token)
+        agent = Agent(config, transport)
+        state.bind(agent)
+
+        try:
+            await agent.run()
+        except AuthRevoked:
+            credentials.clear_token()
+            fatal(
+                "This PC was removed from your DeskWarrant account.\n\n"
+                "Start DeskWarrant again to pair it back."
+            )
+            return 2
+        except KeyboardInterrupt:
+            log.info("Shutting down")
+            return 0
+        finally:
+            # Never leave a cloudflared process behind: an orphaned tunnel would
+            # keep the PC publicly reachable after the agent is gone.
+            await agent.shutdown()
+            await transport.aclose()
     finally:
-        # Never leave a cloudflared process behind: an orphaned tunnel would
-        # keep the PC publicly reachable after the agent is gone.
-        await agent.shutdown()
         if tray is not None:
             tray.stop()
-        await transport.aclose()
 
     return 0
 
@@ -342,12 +439,24 @@ def main() -> int:
         "--pair", action="store_true", help="Forget the stored token and pair again."
     )
     parser.add_argument(
+        "--code",
+        help="Pair with a typed code from the console instead of click-to-approve.",
+    )
+    parser.add_argument(
+        "--typed-code",
+        action="store_true",
+        help="Prompt for a typed pairing code instead of click-to-approve.",
+    )
+    parser.add_argument(
         "--console-url", help="Set the console URL without going through pairing."
     )
     parser.add_argument("--verbose", action="store_true", help="Debug logging.")
     parser.add_argument(
         "--no-tray", action="store_true", help="Do not show a system tray icon."
     )
+    # Before anything else: argparse itself writes to stderr, which a windowed
+    # build does not have.
+    ensure_streams()
     args = parser.parse_args()
 
     setup_logging(args.verbose)

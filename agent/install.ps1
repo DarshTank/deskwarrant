@@ -68,25 +68,14 @@ Or pass an explicit path:
 $ExePath = (Resolve-Path $ExePath).Path
 Write-Host "Agent executable: $ExePath"
 
-# ---------- require pairing before installing ----------
+# ---------- register ----------
 #
-# Task Scheduler runs the agent with no console attached, so it cannot prompt
-# for a pairing code. Pairing must happen interactively first.
+# Pairing is no longer a prerequisite. Task Scheduler gives the agent no console
+# to prompt on, which used to mean it had to be paired by hand first; it now
+# opens a claim and surfaces the approval link through the tray icon instead.
 
 $configPath = Join-Path $env:LOCALAPPDATA "DeskWarrant\config.json"
-if (-not (Test-Path $configPath)) {
-    Write-Warning @"
-This PC has not been paired yet.
-
-Run the agent once by hand and enter a pairing code from the console:
-    & "$ExePath"
-
-Then run this installer again.
-"@
-    return
-}
-
-# ---------- register ----------
+$needsPairing = -not (Test-Path $configPath)
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($existing) {
@@ -122,6 +111,15 @@ Register-ScheduledTask -TaskName $TaskName `
 Write-Host ""
 Write-Host "Registered '$TaskName' to run at logon." -ForegroundColor Green
 Write-Host ""
+
+if ($needsPairing) {
+    Write-Host "This PC is not paired yet." -ForegroundColor Yellow
+    Write-Host "Start the task below and the agent will open your browser to"
+    Write-Host "approve it. If no browser opens, right-click the DeskWarrant"
+    Write-Host "tray icon and choose 'Finish pairing'."
+    Write-Host ""
+}
+
 Write-Host "Start it now with:"
 Write-Host "    Start-ScheduledTask -TaskName '$TaskName'"
 Write-Host ""

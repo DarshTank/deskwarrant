@@ -52,6 +52,16 @@ hidden_imports += [
     "server.input",
 ]
 
+# Written by the release workflow, absent in a source checkout. config.py
+# imports it inside a try/except, which PyInstaller cannot always follow.
+if Path(SPECPATH, "_build_config.py").is_file():
+    hidden_imports.append("_build_config")
+else:
+    print(
+        "  NOTE: _build_config.py is absent, so this build has no console URL "
+        "baked in and will ask for one on first run."
+    )
+
 a = Analysis(
     ["main.py"],
     pathex=[],
@@ -90,9 +100,11 @@ exe = EXE(
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    # console=True so first-run pairing can prompt for the code. Once paired,
-    # install.ps1 registers the task to run minimized.
-    console=True,
+    # No console window. Pairing no longer prompts for anything -- it opens a
+    # claim and sends the user to the browser -- so a black terminal would only
+    # make an ordinary app look like a script, and closing it would kill the
+    # agent. The tray icon is the UI; fatal errors get a message box.
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
