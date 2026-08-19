@@ -158,15 +158,28 @@ export function LiveView({
   // ---------- Heartbeat ----------
 
   useEffect(() => {
-    if (phase !== "live" && phase !== "connecting") return;
+    // `starting` is included deliberately. It is the longest phase — waiting
+    // for the tunnel is allowed to take TUNNEL_TIMEOUT_MS (30s), which is
+    // longer than VIEW_SESSION_STALE_MS (20s) — so a session that does not
+    // beat while starting can die before the browser ever connects.
+    if (phase !== "starting" && phase !== "connecting" && phase !== "live") {
+      return;
+    }
 
-    const timer = setInterval(() => {
+    const beat = () => {
       void api(`/api/devices/${deviceId}/view/heartbeat`, {
         method: "POST",
       }).catch(() => {
         /* one missed beat is harmless; four in a row ends the session */
       });
-    }, HEARTBEAT_INTERVAL_MS);
+    };
+
+    // Beat immediately, not only after the first interval elapses. `phase` is
+    // a dependency, so every transition tears this effect down and rebuilds
+    // it; with interval-only beats a transition landing mid-interval resets
+    // the timer, and a session could reach its 20s deadline having sent none.
+    beat();
+    const timer = setInterval(beat, HEARTBEAT_INTERVAL_MS);
 
     return () => clearInterval(timer);
   }, [deviceId, phase]);
