@@ -40,6 +40,12 @@ hidden_imports = [
     "pycaw.pycaw",
     # Tray backend is selected at runtime.
     "pystray._win32",
+    # Both are imported inside functions so an agent that never pairs does not
+    # pay for Tk. Named here so the Tcl/Tk runtime is definitely bundled --
+    # without it the pairing window silently degrades and the match code
+    # becomes unreadable, which is the one thing it exists to prevent.
+    "pairing_window",
+    "tkinter",
 ]
 
 # The live-view stack is imported lazily inside main.py, so PyInstaller cannot
@@ -72,8 +78,9 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Never needed by the agent and individually large.
-        "tkinter",
+        # Never needed by the agent and individually large. tkinter is NOT
+        # excluded: the pairing window is the only place the user can read the
+        # match code, and a windowed build has no console to print it to.
         "matplotlib",
         "numpy.distutils",
         "pytest",

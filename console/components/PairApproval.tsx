@@ -161,6 +161,10 @@ export function PairApproval({ claimId }: { claimId: string }) {
           Pick the code shown on the PC.
         </p>
         <p className="mt-1 text-xs text-muted">
+          It is in the DeskWarrant window on {claim.hostname}. If that window is
+          closed, right-click the DeskWarrant icon in the system tray.
+        </p>
+        <p className="mt-1 text-xs text-muted">
           If you are not looking at that PC right now, press Deny. A wrong pick
           refuses the request.
         </p>

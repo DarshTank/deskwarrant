@@ -247,8 +247,17 @@ async def claim_pair(config: AgentConfig, on_claim=None) -> str:
     if on_claim is not None:
         on_claim(claim)
 
+    # Show the code ON THIS PC. Without it the match challenge is unanswerable:
+    # the user sees four codes in the browser and has nothing to compare them
+    # against, and a guess has a 3-in-4 chance of denying their own request.
+    from pairing_window import PairingWindow
+
+    window = PairingWindow(claim.match_code, claim.approve_url, hostname())
+    window.start()
+
     # Best effort: under Task Scheduler, or over RDP with no default browser,
-    # this quietly does nothing and the printed link is the fallback.
+    # this quietly does nothing -- the window's button and the printed link are
+    # the fallbacks.
     try:
         webbrowser.open(claim.approve_url)
     except Exception as exc:  # noqa: BLE001
@@ -257,6 +266,7 @@ async def claim_pair(config: AgentConfig, on_claim=None) -> str:
     try:
         device_id, token = await await_approval(config.console_url, claim)
     finally:
+        window.stop()
         if on_claim is not None:
             on_claim(None)
 
