@@ -1,28 +1,44 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Archivo } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// One family, four weights. The Modernist system draws its hierarchy from
+// weight and size rather than from a second typeface.
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
-  title: "DeskWarrant",
-  description: "Natural-language PC agent with remote control.",
+  title: "DeskWarrant — your PC, on a leash",
+  description:
+    "Ask, act, watch and control your Windows PC from any browser. Plain-language answers from live system data, a fixed typed action catalog, push alerts when a rule fires, and full remote control over an on-demand encrypted tunnel.",
   manifest: "/manifest.webmanifest",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#09090b",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3f2f2" },
+    { media: "(prefers-color-scheme: dark)", color: "#161514" },
+  ],
 };
+
+/**
+ * Applied before first paint.
+ *
+ * A saved theme has to land on <html> ahead of the stylesheet resolving, or a
+ * dark-mode user gets a light flash on every navigation — which is worse than
+ * having no toggle at all.
+ *
+ * The `js` class is the gate for scroll-reveal: the landing page's reveal
+ * animation starts sections at opacity 0, and without this marker a browser
+ * that never runs the script would render a page with half its content
+ * invisible. Hiding only when JS is known to be present fails visible.
+ */
+const BOOTSTRAP = `document.documentElement.classList.add("js");try{var t=localStorage.getItem("deskwarrant-theme");if(t==="light"||t==="dark"){document.documentElement.dataset.theme=t}}catch(e){}`;
 
 export default function RootLayout({
   children,
@@ -30,18 +46,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className={`${archivo.variable} antialiased`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOTSTRAP }} />
+      </head>
       {/*
-        h-full + overflow-hidden, not min-h-full: the shell is exactly one
-        viewport tall, so the `flex-1 min-h-0` panes inside it (chat transcript,
-        live canvas, event feed) scroll within their own frames instead of
-        stretching the page. With a minimum height the chat grew without bound
-        and took the whole window scrollbar with it.
+        The body scrolls normally so the landing page, sign-in and the pairing
+        approval behave like ordinary documents. The console shell pins itself
+        to exactly one viewport in its own layout instead, which is what lets
+        the chat transcript, live canvas and event feed scroll inside their own
+        frames rather than dragging the window scrollbar with them.
       */}
-      <body className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+      <body className="min-h-dvh bg-background text-foreground">
         {children}
       </body>
     </html>

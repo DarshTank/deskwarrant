@@ -60,17 +60,18 @@ export function PairDeviceCard({ onPaired }: { onPaired: () => void }) {
   const expired = minted !== null && secondsLeft <= 0;
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-6">
-      <h2 className="text-sm font-medium">Pair a new PC</h2>
-      <p className="mt-1 text-sm text-muted">
+    <div className="border-2 border-border bg-surface p-6">
+      <p className="kicker">Pair a new PC</p>
+      <h2 className="mt-3 text-[20px] font-bold">Nothing to type.</h2>
+      <p className="mt-2 max-w-[60ch] text-[15px] leading-[1.6] text-muted">
         Install DeskWarrant on the Windows PC. It opens a browser here and asks
-        you to approve it — pick the code it shows and the PC is paired. Nothing
-        to type.
+        you to approve it — pick the four-character code it shows and the PC is
+        paired.
       </p>
 
       <Link
         href="/download"
-        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90"
+        className="mt-5 inline-flex items-center border-2 border-accent bg-accent px-5 py-2.5 text-[15px] font-extrabold text-accent-fg transition-opacity hover:opacity-90"
       >
         Add a PC
       </Link>
@@ -79,31 +80,29 @@ export function PairDeviceCard({ onPaired }: { onPaired: () => void }) {
         <button
           type="button"
           onClick={() => setShowFallback(true)}
-          className="mt-4 text-sm text-muted underline underline-offset-4 transition-colors hover:text-foreground"
+          className="mt-5 block text-[13px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
         >
           Pair with a typed code instead
         </button>
       )}
 
       {showFallback && (
-        <div className="mt-5 border-t border-border pt-5">
-          <p className="text-sm text-muted">
+        <div className="mt-6 border-t-2 border-border pt-5">
+          <p className="text-[15px] leading-[1.6] text-muted">
             Run the agent with{" "}
-            <code className="rounded bg-background px-1.5 py-0.5 font-mono text-xs">
+            <code className="bg-background px-1.5 py-0.5 font-mono text-[13px] text-foreground">
               --pair --code
             </code>{" "}
             and enter this. Codes last 10 minutes and work once.
           </p>
 
           {minted && !expired && (
-            <div className="mt-4 rounded-lg border border-accent/40 bg-accent/5 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted">
-                Pairing code
-              </p>
-              <p className="mt-1 font-mono text-3xl font-semibold tracking-[0.3em]">
+            <div className="mt-4 border-2 border-accent bg-accent-wash p-5">
+              <p className="kicker">Pairing code</p>
+              <p className="mt-2 font-mono text-4xl font-extrabold tracking-[0.3em] text-foreground">
                 {minted.code}
               </p>
-              <p className="mt-2 text-xs text-muted">
+              <p className="mt-2 text-[13px] text-muted">
                 Expires in {Math.floor(secondsLeft / 60)}m{" "}
                 {String(secondsLeft % 60).padStart(2, "0")}s
               </p>
@@ -111,18 +110,18 @@ export function PairDeviceCard({ onPaired }: { onPaired: () => void }) {
           )}
 
           {expired && (
-            <p className="mt-4 text-sm text-warn">
+            <p className="mt-4 text-[15px] text-warn">
               That code expired. Generate a new one.
             </p>
           )}
 
-          {error && <p className="mt-4 text-sm text-danger">{error}</p>}
+          {error && <p className="mt-4 text-[15px] text-danger">{error}</p>}
 
           <button
             type="button"
             onClick={() => void mint()}
             disabled={busy}
-            className="mt-4 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="mt-5 border-2 border-accent bg-accent px-4 py-2 text-[14px] font-extrabold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {busy
               ? "Generating…"

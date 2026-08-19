@@ -63,18 +63,18 @@ export function EventFeed({ deviceId }: { deviceId: string }) {
   const unread = events.filter((e) => !e.readAt).length;
 
   return (
-    <div className="thin-scroll flex-1 overflow-y-auto px-4 py-4">
+    <div className="thin-scroll flex-1 overflow-y-auto px-4 py-5">
       <PushToggle />
 
-      <div className="mt-4 flex items-center justify-between">
-        <p className="text-sm text-muted">
+      <div className="mt-6 flex items-center justify-between border-b-2 border-border pb-3">
+        <p className="kicker">
           {unread > 0 ? `${unread} unread` : "All caught up"}
         </p>
         {unread > 0 && (
           <button
             type="button"
             onClick={() => void markAllRead()}
-            className="text-xs text-muted transition-colors hover:text-foreground"
+            className="text-[12px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
           >
             Mark all read
           </button>
@@ -82,31 +82,31 @@ export function EventFeed({ deviceId }: { deviceId: string }) {
       </div>
 
       {error && (
-        <p className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <p className="mt-4 border-2 border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
           {error}
         </p>
       )}
 
-      {loading && <p className="mt-4 text-sm text-muted">Loading…</p>}
+      {loading && <p className="mt-5 text-[15px] text-muted">Loading…</p>}
 
       {!loading && events.length === 0 && (
-        <p className="mt-6 text-sm text-muted">
+        <p className="mt-6 text-[15px] leading-[1.6] text-muted">
           No events yet. Add a watch rule and one will appear here when it fires.
         </p>
       )}
 
-      <ul className="mt-3 space-y-2">
+      <ul className="mt-4 space-y-2">
         {events.map((event) => (
           <li
             key={event.id}
-            className={`rounded-lg border p-3 ${
+            className={`border-l-4 border-y border-r border-y-hairline border-r-hairline p-3.5 ${
               event.readAt
-                ? "border-border bg-surface"
-                : "border-accent/40 bg-accent/5"
+                ? "border-l-hairline bg-surface"
+                : "border-l-accent bg-accent-wash"
             }`}
           >
-            <p className="text-sm">{event.message}</p>
-            <p className="mt-1 text-[11px] text-muted">
+            <p className="text-[15px] leading-[1.55]">{event.message}</p>
+            <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.05em] text-muted">
               {event.template} · {relativeTime(event.createdAt)}
             </p>
           </li>

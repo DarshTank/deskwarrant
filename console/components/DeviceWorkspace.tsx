@@ -91,9 +91,12 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
-      <div className="shrink-0 border-b border-border bg-surface">
+      <div className="shrink-0 border-b-2 border-border bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
-          <Link href="/devices" className="text-xs text-muted hover:text-foreground">
+          <Link
+            href="/devices"
+            className="text-[12px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
+          >
             ← Devices
           </Link>
 
@@ -112,13 +115,13 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
                     setRenaming(false);
                   }
                 }}
-                className="rounded-md border border-border bg-background px-2 py-0.5 text-sm outline-none focus:border-accent"
+                className="border-2 border-border bg-background px-2 py-0.5 text-[15px] font-bold outline-none focus:border-accent"
               />
             ) : (
               <button
                 type="button"
                 onClick={() => setRenaming(true)}
-                className="truncate text-sm font-semibold"
+                className="truncate text-[16px] font-extrabold tracking-[-0.01em]"
                 title="Click to rename"
               >
                 {device.name}
@@ -126,7 +129,7 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
             )}
           </div>
 
-          <span className="hidden truncate text-xs text-muted sm:inline">
+          <span className="hidden truncate font-mono text-[12px] text-muted sm:inline">
             {device.osVersion} ·{" "}
             {device.online
               ? "online"
@@ -136,7 +139,7 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
           <button
             type="button"
             onClick={() => void revoke()}
-            className="ml-auto rounded-md border border-border px-2 py-1 text-[11px] text-danger transition-colors hover:bg-danger/10"
+            className="ml-auto border-2 border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-danger transition-colors hover:border-danger hover:bg-danger/10"
           >
             Revoke
           </button>
@@ -148,7 +151,7 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
+              className={`-mb-0.5 border-b-4 px-4 py-2.5 text-[13px] font-extrabold uppercase tracking-[0.08em] transition-colors ${
                 tab === t.id
                   ? "border-accent text-foreground"
                   : "border-transparent text-muted hover:text-foreground"
@@ -161,7 +164,7 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
       </div>
 
       {error && (
-        <p className="shrink-0 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger">
+        <p className="shrink-0 border-b-2 border-danger/50 bg-danger/10 px-4 py-2 text-[13px] text-danger">
           {error}
         </p>
       )}
@@ -174,7 +177,7 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
           // Build plan §6: the chat panel stays fully functional beside the
           // live canvas, so the user can delegate a task and watch it happen.
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-            <div className="flex min-h-0 flex-col border-border lg:border-r">
+            <div className="flex min-h-0 flex-col border-border lg:border-r-2">
               <LiveView deviceId={device.id} online={device.online} />
             </div>
             <div className="hidden min-h-0 flex-col lg:flex">

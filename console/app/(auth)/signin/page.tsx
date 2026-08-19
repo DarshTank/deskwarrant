@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/lib/auth";
+import { Logo } from "@/components/Logo";
 
 export const metadata = { title: "Sign in · DeskWarrant" };
 
@@ -32,16 +34,32 @@ export default async function SignInPage({
   if (session?.user) redirect(next);
 
   return (
-    <main className="flex-1 grid place-items-center px-6 py-16">
-      <div className="w-full max-w-sm">
-        <div className="mb-10 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">DeskWarrant</h1>
-          <p className="mt-2 text-sm text-muted">
-            Ask, act, watch, and control your PC from anywhere.
-          </p>
-        </div>
+    <main className="grid min-h-dvh place-items-center px-5 py-16">
+      <div className="w-full max-w-md">
+        <Link href="/" className="mb-10 flex items-center gap-3">
+          <Logo size={30} />
+          <span className="text-[18px] font-extrabold tracking-[-0.02em]">
+            DeskWarrant
+          </span>
+        </Link>
 
-        <div className="rounded-xl border border-border bg-surface p-6">
+        <p className="kicker">Sign in</p>
+        <h1
+          className="mt-4 font-extrabold"
+          style={{
+            fontSize: "clamp(32px, 5vw, 44px)",
+            lineHeight: 1.06,
+            letterSpacing: "-0.03em",
+            marginLeft: "-0.04em",
+          }}
+        >
+          Your PC, on a leash.
+        </h1>
+        <p className="mt-4 text-[16px] leading-[1.6] text-muted">
+          Ask, act, watch and control your Windows PC from any browser.
+        </p>
+
+        <div className="mt-8 border-2 border-border bg-surface p-6">
           <form
             action={async () => {
               "use server";
@@ -50,16 +68,24 @@ export default async function SignInPage({
           >
             <button
               type="submit"
-              className="w-full inline-flex items-center justify-center gap-3 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90"
+              className="inline-flex w-full items-center justify-center gap-3 border-2 border-accent bg-accent px-4 py-3 text-[15px] font-extrabold text-accent-fg transition-opacity hover:opacity-90"
             >
               <GoogleMark />
               Continue with Google
             </button>
           </form>
-          <p className="mt-4 text-center text-xs text-muted">
-            A device belongs to exactly one account. There is no sharing.
+          <p className="mt-5 border-t border-hairline pt-4 text-[13px] leading-[1.55] text-muted">
+            A device belongs to exactly one account. There is no sharing model,
+            and that check is the whole authorization layer.
           </p>
         </div>
+
+        <Link
+          href="/"
+          className="mt-6 inline-block text-[13px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
+        >
+          ← Back to the overview
+        </Link>
       </div>
     </main>
   );
@@ -67,7 +93,7 @@ export default async function SignInPage({
 
 function GoogleMark() {
   return (
-    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
       <path
         fill="#FFC107"
         d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"

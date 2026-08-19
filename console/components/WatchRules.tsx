@@ -90,38 +90,41 @@ export function WatchRules({ deviceId }: { deviceId: string }) {
   }
 
   return (
-    <div className="thin-scroll flex-1 overflow-y-auto px-4 py-4">
-      <p className="text-sm text-muted">
+    <div className="thin-scroll flex-1 overflow-y-auto px-4 py-5">
+      <p className="kicker">Watch rules</p>
+      <p className="mt-3 max-w-[64ch] text-[15px] leading-[1.6] text-muted">
         The PC checks these locally every 15 seconds and pushes a notification
-        when one fires. Rules come from a fixed catalog.
+        when one fires. Rules come from a fixed catalog — you parameterise them,
+        you cannot author new ones, and that is what keeps rule evaluation a
+        small auditable amount of code on the agent.
       </p>
 
       {error && (
-        <p className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <p className="mt-4 border-2 border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
           {error}
         </p>
       )}
 
-      {loading && <p className="mt-4 text-sm text-muted">Loading…</p>}
+      {loading && <p className="mt-5 text-[15px] text-muted">Loading…</p>}
 
       {!loading && rules.length > 0 && (
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-6 space-y-3">
           {rules.map((rule) => {
             const entry = catalog.find((c) => c.template === rule.template);
             return (
               <li
                 key={rule.id}
-                className="rounded-lg border border-border bg-surface p-3"
+                className="border-2 border-border bg-surface p-4"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">
+                    <p className="text-[16px] font-bold">
                       {entry?.label ?? rule.template}
                     </p>
-                    <p className="mt-0.5 font-mono text-[11px] text-muted">
+                    <p className="mt-1 font-mono text-[12px] text-muted">
                       {JSON.stringify(rule.params)}
                     </p>
-                    <p className="mt-1 text-[11px] text-muted">
+                    <p className="mt-1.5 text-[11px] uppercase tracking-[0.05em] text-muted">
                       Cooldown {rule.cooldownSeconds}s ·{" "}
                       {rule.lastTriggeredAt
                         ? `last fired ${new Date(rule.lastTriggeredAt).toLocaleString()}`
@@ -132,14 +135,14 @@ export function WatchRules({ deviceId }: { deviceId: string }) {
                     <button
                       type="button"
                       onClick={() => void toggle(rule)}
-                      className="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-background"
+                      className="border-2 border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
                     >
                       {rule.enabled ? "Disable" : "Enable"}
                     </button>
                     <button
                       type="button"
                       onClick={() => void remove(rule)}
-                      className="rounded-md border border-border px-2 py-1 text-[11px] text-danger transition-colors hover:bg-danger/10"
+                      className="border-2 border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-danger transition-colors hover:border-danger hover:bg-danger/10"
                     >
                       Delete
                     </button>
@@ -151,9 +154,9 @@ export function WatchRules({ deviceId }: { deviceId: string }) {
         </ul>
       )}
 
-      <div className="mt-6 rounded-lg border border-border bg-surface p-4">
-        <p className="text-sm font-medium">Add a rule</p>
-        <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-8 border-2 border-border bg-surface p-5">
+        <p className="kicker">Add a rule</p>
+        <div className="mt-4 flex flex-wrap gap-2">
           {catalog.map((entry) => (
             <button
               key={entry.template}
@@ -164,10 +167,10 @@ export function WatchRules({ deviceId }: { deviceId: string }) {
                   params: { ...entry.defaults },
                 })
               }
-              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+              className={`border-2 px-3 py-1.5 text-[13px] font-semibold transition-colors ${
                 draft?.template === entry.template
-                  ? "border-accent text-foreground"
-                  : "border-border text-muted hover:text-foreground"
+                  ? "border-accent bg-accent-wash text-accent-soft"
+                  : "border-border text-muted hover:border-accent hover:text-accent"
               }`}
             >
               {entry.label}
@@ -177,12 +180,14 @@ export function WatchRules({ deviceId }: { deviceId: string }) {
 
         {draft && (
           <div className="mt-4 space-y-3">
-            <p className="text-xs text-muted">
+            <p className="text-[14px] leading-[1.55] text-muted">
               {catalog.find((c) => c.template === draft.template)?.description}
             </p>
             {Object.entries(draft.params).map(([key, value]) => (
               <label key={key} className="block">
-                <span className="text-xs text-muted">{key}</span>
+                <span className="text-[11px] uppercase tracking-[0.08em] text-muted">
+                  {key}
+                </span>
                 <input
                   value={String(value ?? "")}
                   onChange={(e) => {
@@ -194,27 +199,25 @@ export function WatchRules({ deviceId }: { deviceId: string }) {
                       params: { ...draft.params, [key]: next },
                     });
                   }}
-                  className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-accent"
+                  className="mt-1.5 w-full border-2 border-border bg-background px-3 py-2 text-[15px] outline-none focus:border-accent"
                 />
               </label>
             ))}
             {Object.keys(draft.params).length === 0 && (
-              <p className="text-xs text-muted">
-                This rule takes no parameters.
-              </p>
+              <p className="text-[14px] text-muted">This rule takes no parameters.</p>
             )}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => void create()}
-                className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg transition-opacity hover:opacity-90"
+                className="border-2 border-accent bg-accent px-4 py-2 text-[12px] font-extrabold uppercase tracking-[0.08em] text-accent-fg transition-opacity hover:opacity-90"
               >
                 Add rule
               </button>
               <button
                 type="button"
                 onClick={() => setDraft(null)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:bg-background"
+                className="border-2 border-border px-4 py-2 text-[12px] font-extrabold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
               >
                 Cancel
               </button>

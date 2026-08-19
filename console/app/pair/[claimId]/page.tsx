@@ -25,7 +25,7 @@ export default async function PairPage({
   }
 
   return (
-    <main className="flex-1 overflow-y-auto px-6 py-12">
+    <main className="min-h-dvh px-5 py-14">
       <PairApproval claimId={claimId} />
     </main>
   );

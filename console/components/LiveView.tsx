@@ -327,8 +327,8 @@ export function LiveView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-xs">
-        <span className="text-muted">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b-2 border-border px-4 py-2.5 text-[12px]">
+        <span className="uppercase tracking-[0.05em] text-muted">
           {detail}
           {live && ` · ${stats.fps} fps · ${stats.kbps} kbit/s`}
         </span>
@@ -337,7 +337,7 @@ export function LiveView({
             <button
               type="button"
               onClick={() => sendInput({ t: "c", e: "keyframe" })}
-              className="rounded-md border border-border px-2 py-1 text-muted transition-colors hover:text-foreground"
+              className="border-2 border-border px-3 py-1.5 font-semibold uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent hover:text-accent"
             >
               Refresh
             </button>
@@ -346,7 +346,7 @@ export function LiveView({
             <button
               type="button"
               onClick={() => void stop()}
-              className="rounded-md border border-border px-3 py-1 transition-colors hover:bg-surface"
+              className="border-2 border-border px-4 py-1.5 font-semibold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
             >
               Cancel
             </button>
@@ -354,7 +354,7 @@ export function LiveView({
             <button
               type="button"
               onClick={() => void stop()}
-              className="rounded-md border border-border px-3 py-1 transition-colors hover:bg-surface"
+              className="border-2 border-border px-4 py-1.5 font-semibold uppercase tracking-[0.08em] transition-colors hover:border-danger hover:text-danger"
             >
               Stop
             </button>
@@ -363,7 +363,7 @@ export function LiveView({
               type="button"
               onClick={() => void connect()}
               disabled={!online}
-              className="rounded-md bg-accent px-3 py-1 font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="border-2 border-accent bg-accent px-4 py-1.5 font-extrabold uppercase tracking-[0.08em] text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {online
                 ? phase === "failed"
@@ -376,7 +376,7 @@ export function LiveView({
       </div>
 
       {error && (
-        <div className="shrink-0 border-b border-danger/40 bg-danger/10 px-4 py-2 text-xs text-danger">
+        <div className="shrink-0 border-b-2 border-danger/50 bg-danger/10 px-4 py-2.5 text-[13px] text-danger">
           <p>{error}</p>
           {/* There is no degraded view mode to fall back to, so say plainly
               what still works rather than leaving a dead canvas on screen. */}
@@ -386,11 +386,11 @@ export function LiveView({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 bg-black/90 p-2">
+      <div className="min-h-0 flex-1 bg-[#0c0b0b] p-2">
         <canvas
           ref={canvasRef}
           tabIndex={0}
-          className="h-full w-full object-contain outline-none focus:ring-1 focus:ring-accent"
+          className="h-full w-full object-contain outline-none focus:ring-2 focus:ring-accent"
           onPointerMove={(e) => {
             if (!interactive || !live) return;
             const p = toNormalised(e);
@@ -417,7 +417,7 @@ export function LiveView({
       </div>
 
       {live && interactive && (
-        <p className="shrink-0 border-t border-border px-4 py-1.5 text-[11px] text-muted">
+        <p className="shrink-0 border-t-2 border-border px-4 py-2 text-[11px] text-muted">
           Click the screen to capture the keyboard. The agent runs unelevated —
           it cannot see the lock screen or UAC prompts.
         </p>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { ClaimView } from "@/app/api/claims/[id]/route";
 import { api } from "@/lib/client-api";
+import { Logo } from "./Logo";
 
 /**
  * Polls until the agent has actually redeemed the claim. Approving only marks
@@ -74,10 +75,8 @@ export function PairApproval({ claimId }: { claimId: string }) {
   if (loadError) {
     return (
       <Shell>
-        <h1 className="text-lg font-semibold tracking-tight">
-          Nothing to approve
-        </h1>
-        <p className="mt-2 text-sm text-muted">{loadError}</p>
+        <h1 className="text-[22px] font-extrabold">Nothing to approve</h1>
+        <p className="mt-3 text-[15px] leading-[1.6] text-muted">{loadError}</p>
         <BackLink />
       </Shell>
     );
@@ -86,7 +85,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
   if (!claim) {
     return (
       <Shell>
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="text-[15px] text-muted">Loading…</p>
       </Shell>
     );
   }
@@ -94,7 +93,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
   if (claim.status === "CONSUMED") {
     return (
       <Shell>
-        <h1 className="text-lg font-semibold tracking-tight text-online">
+        <h1 className="text-[22px] font-extrabold text-online">
           {claim.hostname} is paired
         </h1>
         <p className="mt-2 text-sm text-muted">
@@ -109,7 +108,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
   if (claim.status === "APPROVED") {
     return (
       <Shell>
-        <h1 className="text-lg font-semibold tracking-tight">Approved</h1>
+        <h1 className="text-[22px] font-extrabold">Approved</h1>
         <p className="mt-2 text-sm text-muted">
           Waiting for {claim.hostname} to pick up its credentials…
         </p>
@@ -120,7 +119,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
   if (claim.status === "DENIED") {
     return (
       <Shell>
-        <h1 className="text-lg font-semibold tracking-tight">Denied</h1>
+        <h1 className="text-[22px] font-extrabold">Denied</h1>
         <p className="mt-2 text-sm text-muted">
           This request was refused and cannot be reused. If it was yours, start
           the agent again to get a new one.
@@ -133,7 +132,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
   if (claim.status === "EXPIRED") {
     return (
       <Shell>
-        <h1 className="text-lg font-semibold tracking-tight">Expired</h1>
+        <h1 className="text-[22px] font-extrabold">Expired</h1>
         <p className="mt-2 text-sm text-muted">
           Pairing requests last 10 minutes. Start the agent on {claim.hostname}{" "}
           again.
@@ -145,26 +144,22 @@ export function PairApproval({ claimId }: { claimId: string }) {
 
   return (
     <Shell>
-      <p className="text-xs uppercase tracking-wide text-muted">
-        Pairing request
-      </p>
-      <h1 className="mt-1 text-lg font-semibold tracking-tight">
+      <p className="kicker">Pairing request</p>
+      <h1 className="mt-3 text-[26px] font-extrabold tracking-[-0.02em]">
         {claim.hostname}
       </h1>
-      <p className="mt-1 text-sm text-muted">
+      <p className="mt-2 font-mono text-[13px] text-muted">
         {claim.osVersion} · agent {claim.agentVersion}
         {claim.sourceIp ? ` · from ${claim.sourceIp}` : ""}
       </p>
 
-      <div className="mt-6 rounded-lg border border-border bg-background p-4">
-        <p className="text-sm">
-          Pick the code shown on the PC.
-        </p>
-        <p className="mt-1 text-xs text-muted">
+      <div className="mt-7 border-2 border-border bg-background p-5">
+        <p className="text-[17px] font-bold">Pick the code shown on the PC.</p>
+        <p className="mt-2 text-[14px] leading-[1.55] text-muted">
           It is in the DeskWarrant window on {claim.hostname}. If that window is
           closed, right-click the DeskWarrant icon in the system tray.
         </p>
-        <p className="mt-1 text-xs text-muted">
+        <p className="mt-2 text-[14px] leading-[1.55] text-muted">
           If you are not looking at that PC right now, press Deny. A wrong pick
           refuses the request.
         </p>
@@ -176,7 +171,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
               type="button"
               disabled={busy}
               onClick={() => void decide("approve", { matchCode: choice })}
-              className="rounded-lg border border-border bg-surface px-4 py-3 font-mono text-xl font-semibold tracking-[0.25em] transition-colors hover:border-accent hover:bg-accent/10 disabled:opacity-50"
+              className="border-2 border-border bg-surface px-4 py-4 font-mono text-2xl font-extrabold tracking-[0.25em] transition-colors hover:border-accent hover:bg-accent-wash hover:text-accent disabled:opacity-50"
             >
               {choice}
             </button>
@@ -185,7 +180,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
       </div>
 
       {actionError && (
-        <p className="mt-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+        <p className="mt-5 border-2 border-danger/50 bg-danger/10 px-4 py-2.5 text-[15px] text-danger">
           {actionError}
         </p>
       )}
@@ -194,7 +189,7 @@ export function PairApproval({ claimId }: { claimId: string }) {
         type="button"
         disabled={busy}
         onClick={() => void decide("deny")}
-        className="mt-4 text-sm text-muted underline underline-offset-4 transition-colors hover:text-danger disabled:opacity-50"
+        className="mt-5 text-[13px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-danger disabled:opacity-50"
       >
         Deny this request
       </button>
@@ -205,11 +200,13 @@ export function PairApproval({ claimId }: { claimId: string }) {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto w-full max-w-md">
-      <div className="mb-8 flex items-center justify-center gap-2">
-        <ShieldMark />
-        <span className="font-semibold tracking-tight">DeskWarrant</span>
+      <div className="mb-8 flex items-center justify-center gap-3">
+        <Logo size={26} />
+        <span className="text-[17px] font-extrabold tracking-[-0.02em]">
+          DeskWarrant
+        </span>
       </div>
-      <div className="rounded-xl border border-border bg-surface p-6">
+      <div className="border-2 border-border bg-surface p-7">
         {children}
       </div>
     </div>
@@ -220,28 +217,9 @@ function BackLink({ label = "Back to devices" }: { label?: string }) {
   return (
     <Link
       href="/devices"
-      className="mt-6 inline-block text-sm text-accent underline underline-offset-4"
+      className="mt-7 inline-block text-[13px] uppercase tracking-[0.06em] text-accent-soft transition-colors hover:text-accent"
     >
       {label}
     </Link>
-  );
-}
-
-function ShieldMark() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="text-accent"
-      aria-hidden="true"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
   );
 }

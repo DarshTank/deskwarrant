@@ -260,14 +260,14 @@ export function Chat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
-        <span className="text-xs text-muted">
+      <div className="flex shrink-0 items-center justify-between border-b-2 border-border px-4 py-2.5">
+        <span className="text-[12px] uppercase tracking-[0.06em] text-muted">
           {online ? "Ask about this PC" : "PC is offline — answers unavailable"}
         </span>
         <button
           type="button"
           onClick={() => void newConversation()}
-          className="text-xs text-muted transition-colors hover:text-foreground"
+          className="text-[12px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
         >
           New chat
         </button>
@@ -277,7 +277,7 @@ export function Chat({
         ref={scrollRef}
         className="thin-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
       >
-        {!loaded && <p className="text-sm text-muted">Loading…</p>}
+        {!loaded && <p className="text-[15px] text-muted">Loading…</p>}
 
         {loaded && visible.length === 0 && (
           <EmptyChat compact={compact} onPick={(q) => setInput(q)} />
@@ -288,7 +288,7 @@ export function Chat({
         ))}
 
         {runningTools.length > 0 && (
-          <div className="rounded-lg border border-border bg-surface px-3 py-2">
+          <div className="border-2 border-border bg-surface px-3 py-2">
             {runningTools.map((tool) => (
               <div
                 key={tool.jobId}
@@ -316,13 +316,13 @@ export function Chat({
         ))}
 
         {error && (
-          <p className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+          <p className="border-2 border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
             {error}
           </p>
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border p-3">
+      <div className="shrink-0 border-t-2 border-border p-3">
         <div className="flex items-end gap-2">
           <textarea
             value={input}
@@ -337,13 +337,13 @@ export function Chat({
             placeholder={
               online ? "Is my download finished?" : "This PC is offline"
             }
-            className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent"
+            className="max-h-32 min-h-[42px] flex-1 resize-none border-2 border-border bg-surface px-3 py-2.5 text-[15px] outline-none placeholder:text-muted focus:border-accent"
           />
           <button
             type="button"
             onClick={() => void send()}
             disabled={streaming || input.trim() === ""}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="border-2 border-accent bg-accent px-5 py-2.5 text-[14px] font-extrabold uppercase tracking-[0.06em] text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {streaming ? "…" : "Send"}
           </button>
@@ -368,7 +368,7 @@ function EmptyChat({
   ];
   return (
     <div className="py-6">
-      <p className="text-sm text-muted">
+      <p className="text-[15px] leading-[1.6] text-muted">
         Ask anything about this PC. Answers come from live system data — never
         from a screenshot.
       </p>
@@ -379,7 +379,7 @@ function EmptyChat({
               key={s}
               type="button"
               onClick={() => onPick(s)}
-              className="rounded-full border border-border px-3 py-1 text-xs text-muted transition-colors hover:border-accent hover:text-foreground"
+              className="border-2 border-border px-3 py-1.5 text-[13px] text-muted transition-colors hover:border-accent hover:text-accent"
             >
               {s}
             </button>
@@ -394,7 +394,7 @@ function MessageBubble({ message }: { message: UiMessage }) {
   if (message.role === "USER") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 text-sm text-accent-fg">
+        <div className="max-w-[85%] bg-accent px-4 py-2.5 text-[15px] leading-[1.5] text-accent-fg">
           {message.content}
         </div>
       </div>
@@ -404,8 +404,8 @@ function MessageBubble({ message }: { message: UiMessage }) {
   return (
     <div className="space-y-2">
       {message.toolCalls && message.toolCalls.length > 0 && (
-        <details className="rounded-lg border border-border bg-surface px-3 py-2">
-          <summary className="cursor-pointer text-xs text-muted">
+        <details className="border-l-2 border-hairline bg-surface px-3 py-2">
+          <summary className="cursor-pointer text-[12px] uppercase tracking-[0.06em] text-muted">
             Ran {message.toolCalls.length}{" "}
             {message.toolCalls.length === 1 ? "tool" : "tools"}
           </summary>
@@ -422,7 +422,7 @@ function MessageBubble({ message }: { message: UiMessage }) {
         </details>
       )}
       {message.content.trim() !== "" && (
-        <p className="max-w-[95%] whitespace-pre-wrap text-sm leading-relaxed">
+        <p className="max-w-[95%] text-[15px] leading-[1.62] whitespace-pre-wrap">
           {message.content}
         </p>
       )}
@@ -438,23 +438,25 @@ function ConfirmCard({
   onDecide: (approve: boolean) => void;
 }) {
   return (
-    <div className="rounded-xl border border-warn/50 bg-warn/10 p-4">
-      <p className="text-sm font-medium">Confirm this action</p>
-      <p className="mt-2 font-mono text-xs text-muted">
+    <div className="border-2 border-warn/60 bg-warn/10 p-4">
+      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-warn">
+        Confirm this action
+      </p>
+      <p className="mt-2.5 font-mono text-[13px] text-foreground">
         {confirm.toolName}({JSON.stringify(confirm.args)})
       </p>
       <div className="mt-3 flex gap-2">
         <button
           type="button"
           onClick={() => onDecide(true)}
-          className="rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+          className="border-2 border-danger bg-danger px-4 py-2 text-[12px] font-extrabold uppercase tracking-[0.08em] text-white transition-opacity hover:opacity-90"
         >
           Do it
         </button>
         <button
           type="button"
           onClick={() => onDecide(false)}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:bg-surface"
+          className="border-2 border-border px-4 py-2 text-[12px] font-extrabold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
         >
           Cancel
         </button>
@@ -466,11 +468,11 @@ function ConfirmCard({
 function ToolStatusIcon({ status }: { status: RunningTool["status"] }) {
   if (status === "running") {
     return (
-      <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
+      <span className="h-2 w-2 shrink-0 animate-pulse bg-accent" />
     );
   }
   if (status === "DONE") {
-    return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-online" />;
+    return <span className="h-2 w-2 shrink-0 bg-online" />;
   }
-  return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" />;
+  return <span className="h-2 w-2 shrink-0 bg-danger" />;
 }

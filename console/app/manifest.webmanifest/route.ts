@@ -8,8 +8,10 @@ export function GET() {
     description: "Natural-language PC agent with remote control.",
     start_url: "/devices",
     display: "standalone",
-    background_color: "#09090b",
-    theme_color: "#09090b",
+    // Matches the theme's dark ground, which is what an installed PWA splash
+    // should paint. A manifest takes one colour, so it picks the dark one.
+    background_color: "#161514",
+    theme_color: "#161514",
     icons: [
       {
         src: "/icon-192.png",

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
+import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default async function DashboardLayout({
   children,
@@ -11,26 +13,54 @@ export default async function DashboardLayout({
   if (!session?.user) redirect("/signin");
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <header className="shrink-0 border-b border-border bg-surface">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-          <Link href="/devices" className="flex items-center gap-2">
-            <ShieldMark />
-            <span className="font-semibold tracking-tight">DeskWarrant</span>
+    /*
+      Exactly one viewport tall, and it owns the overflow. The `flex-1 min-h-0`
+      panes inside it — chat transcript, live canvas, event feed — scroll within
+      their own frames instead of stretching the page; given a minimum height
+      the chat grows without bound and takes the window scrollbar with it.
+    */
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <header className="shrink-0 border-b-2 border-border bg-surface">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
+          <Link
+            href="/devices"
+            className="flex items-center gap-2.5 text-foreground"
+          >
+            <Logo size={22} />
+            <span className="font-extrabold tracking-[-0.02em]">
+              DeskWarrant
+            </span>
           </Link>
-          <div className="flex items-center gap-4">
-            <span className="hidden text-xs text-muted sm:inline">
+
+          <nav className="ml-4 hidden items-center gap-5 sm:flex">
+            <Link
+              href="/devices"
+              className="text-[13px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
+            >
+              Devices
+            </Link>
+            <Link
+              href="/download"
+              className="text-[13px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
+            >
+              Add a PC
+            </Link>
+          </nav>
+
+          <div className="ml-auto flex items-center gap-3">
+            <span className="hidden text-xs text-muted md:inline">
               {session.user.email}
             </span>
+            <ThemeToggle />
             <form
               action={async () => {
                 "use server";
-                await signOut({ redirectTo: "/signin" });
+                await signOut({ redirectTo: "/" });
               }}
             >
               <button
                 type="submit"
-                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted transition-colors hover:text-foreground"
+                className="border-2 border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent hover:text-accent"
               >
                 Sign out
               </button>
@@ -38,26 +68,8 @@ export default async function DashboardLayout({
           </div>
         </div>
       </header>
-      <main className="flex-1 min-h-0 flex flex-col">{children}</main>
-    </div>
-  );
-}
 
-function ShieldMark() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="text-accent"
-      aria-hidden="true"
-    >
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
+      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+    </div>
   );
 }
