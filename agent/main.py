@@ -13,6 +13,7 @@ import logging
 import logging.handlers
 import os
 import sys
+import threading
 import time
 from typing import Any
 
@@ -66,6 +67,30 @@ def windowed() -> bool:
         return not (sys.__stdout__ and sys.__stdout__.isatty())
     except (AttributeError, ValueError):
         return True
+
+
+def install_crash_handlers() -> None:
+    """Route every unhandled exception to the log file.
+
+    Threads are why this matters most: the tray and the pairing window run
+    their own loops, and Python's default handler writes to stderr -- which in
+    a windowed build is the null device. Without this, a crash off the main
+    thread leaves no trace of any kind.
+    """
+
+    def on_exception(exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+        log.error("Unhandled exception", exc_info=(exc_type, exc, tb))
+
+    def on_thread_exception(args) -> None:  # type: ignore[no-untyped-def]
+        name = args.thread.name if args.thread else "?"
+        log.error(
+            "Unhandled exception in thread %s",
+            name,
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+
+    sys.excepthook = on_exception
+    threading.excepthook = on_thread_exception
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -450,6 +475,12 @@ def main() -> int:
     parser.add_argument(
         "--console-url", help="Set the console URL without going through pairing."
     )
+    parser.add_argument(
+        "--show-pairing-code",
+        nargs=3,
+        metavar=("CODE", "URL", "HOSTNAME"),
+        help=argparse.SUPPRESS,  # internal: the pairing window child process
+    )
     parser.add_argument("--verbose", action="store_true", help="Debug logging.")
     parser.add_argument(
         "--no-tray", action="store_true", help="Do not show a system tray icon."
@@ -459,12 +490,33 @@ def main() -> int:
     ensure_streams()
     args = parser.parse_args()
 
+    if args.show_pairing_code:
+        # This process exists only to own Tk's main thread. It deliberately
+        # sets up no logging -- two processes writing one rotating file corrupt
+        # it -- and never touches the console or the device token.
+        from pairing_window import show_pairing_window
+
+        show_pairing_window(*args.show_pairing_code)
+        return 0
+
     setup_logging(args.verbose)
+    install_crash_handlers()
 
     try:
         return asyncio.run(bootstrap(args))
     except KeyboardInterrupt:
         return 0
+    except BaseException:  # noqa: BLE001
+        # A windowed build has no stderr, so without this an unhandled
+        # exception kills the agent leaving nothing behind but a gap in the
+        # log -- which is exactly as much use as no log at all. Anything that
+        # ends the process gets written down and shown.
+        log.exception("Agent crashed")
+        fatal(
+            "DeskWarrant stopped unexpectedly.\n\n"
+            f"The error was written to:\n{log_path()}"
+        )
+        return 3
 
 
 if __name__ == "__main__":

@@ -6,17 +6,24 @@ no code in front of them and should press Deny. So the code has to be *visible*
 -- not printed to a console the windowed build does not have, not buried in a
 tray menu nobody thinks to right-click, and not in a log file.
 
-Runs its own Tk mainloop on a dedicated thread. Tk is not thread-safe, so this
-thread creates the root, owns it, and is the only thread that touches it; the
-asyncio loop signals it to close through a threading.Event that a periodic
-`after` callback polls.
+The window runs in a SEPARATE PROCESS, and that is not incidental. Tkinter is
+only supported on a process's main thread, and the agent's main thread belongs
+to asyncio. Running Tk on a background thread instead appears to work and then
+crashes the whole agent: the widgets are eventually garbage-collected from the
+main thread, Tcl detects the cross-thread access, and aborts inside tcl86t.dll
+with 0x80000003 -- taking the agent down seconds after pairing succeeded.
+
+A child process sidesteps that completely. Tk owns its own main thread, which is
+the supported arrangement, and anything that goes wrong in it is confined to a
+throwaway process rather than killing the agent.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
-import webbrowser
+import subprocess
+import sys
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -25,151 +32,126 @@ _FG = "#fafafa"
 _MUTED = "#8b8b94"
 _ACCENT = "#6366f1"
 
-CLOSE_POLL_MS = 200
+STOP_GRACE_S = 3.0
 
 
 class PairingWindow:
-    """A small always-on-top window showing the match code and approval link."""
+    """Spawns and reaps the child process that displays the code."""
 
     def __init__(self, code: str, url: str, hostname: str) -> None:
         self._code = code
         self._url = url
         self._hostname = hostname
-        self._close = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._process: subprocess.Popen[bytes] | None = None
+
+    def _command(self) -> list[str]:
+        args = ["--show-pairing-code", self._code, self._url, self._hostname]
+        if getattr(sys, "frozen", False):
+            # The frozen agent re-invokes itself; sys.executable IS the agent.
+            return [sys.executable, *args]
+        return [sys.executable, str(Path(__file__).resolve().parent / "main.py"), *args]
 
     def start(self) -> None:
-        self._thread = threading.Thread(
-            target=self._run, name="dw-pairing-window", daemon=True
-        )
-        self._thread.start()
+        try:
+            self._process = subprocess.Popen(  # noqa: S603
+                self._command(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                # No console flash when the agent runs from Task Scheduler.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError as exc:
+            # Pairing still works without it -- the code is in the tray menu and
+            # the log -- so this must never be fatal.
+            log.warning("Could not show the pairing window: %s", exc)
 
     def stop(self) -> None:
-        self._close.set()
-        if self._thread is not None:
-            # Short join: the window is cosmetic and must never hold up pairing
-            # or delay shutdown if Tk is wedged.
-            self._thread.join(timeout=3.0)
-
-    # ---------- the Tk thread ----------
-
-    def _run(self) -> None:
-        try:
-            import tkinter as tk
-        except ImportError:
-            # A build without Tk still pairs -- the tray menu and the log carry
-            # the code. Degrade quietly rather than failing the pairing.
-            log.debug("tkinter unavailable; no pairing window")
+        process = self._process
+        self._process = None
+        if process is None or process.poll() is not None:
             return
 
         try:
-            root = tk.Tk()
-        except Exception as exc:  # noqa: BLE001
-            log.debug("Could not open the pairing window: %s", exc)
-            return
+            process.terminate()
+            process.wait(timeout=STOP_GRACE_S)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except OSError:
+                pass
+        except OSError as exc:
+            log.debug("Could not close the pairing window: %s", exc)
 
-        root.title("DeskWarrant - pair this PC")
-        root.configure(bg=_BG)
-        root.resizable(False, False)
-        root.attributes("-topmost", True)
 
-        # Closing the window must not cancel pairing: the agent is still
-        # polling, and the code is still valid in the tray menu.
-        root.protocol("WM_DELETE_WINDOW", lambda: self._close.set())
+def show_pairing_window(code: str, url: str, hostname: str) -> None:
+    """Entry point for the child process. Runs Tk on ITS main thread."""
+    import tkinter as tk
+    import webbrowser
 
-        frame = tk.Frame(root, bg=_BG, padx=32, pady=26)
-        frame.pack()
+    root = tk.Tk()
+    root.title("DeskWarrant - pair this PC")
+    root.configure(bg=_BG)
+    root.resizable(False, False)
+    root.attributes("-topmost", True)
 
-        tk.Label(
-            frame,
-            text="PAIRING THIS PC",
-            bg=_BG,
-            fg=_MUTED,
-            font=("Segoe UI", 9),
-        ).pack()
+    frame = tk.Frame(root, bg=_BG, padx=32, pady=26)
+    frame.pack()
 
-        tk.Label(
-            frame,
-            text=self._hostname,
-            bg=_BG,
-            fg=_FG,
-            font=("Segoe UI", 13, "bold"),
-        ).pack(pady=(2, 16))
+    tk.Label(
+        frame, text="PAIRING THIS PC", bg=_BG, fg=_MUTED, font=("Segoe UI", 9)
+    ).pack()
+    tk.Label(
+        frame, text=hostname, bg=_BG, fg=_FG, font=("Segoe UI", 13, "bold")
+    ).pack(pady=(2, 16))
+    tk.Label(
+        frame,
+        text="Pick this code in your browser:",
+        bg=_BG,
+        fg=_FG,
+        font=("Segoe UI", 10),
+    ).pack()
+    tk.Label(
+        frame,
+        text=" ".join(code),
+        bg=_BG,
+        fg=_ACCENT,
+        font=("Consolas", 40, "bold"),
+    ).pack(pady=(6, 16))
+    tk.Label(
+        frame,
+        text="If your browser did not open, click below.",
+        bg=_BG,
+        fg=_MUTED,
+        font=("Segoe UI", 9),
+        wraplength=340,
+    ).pack()
 
-        tk.Label(
-            frame,
-            text="Pick this code in your browser:",
-            bg=_BG,
-            fg=_FG,
-            font=("Segoe UI", 10),
-        ).pack()
+    tk.Button(
+        frame,
+        text="Open the approval page",
+        command=lambda: webbrowser.open(url),
+        bg=_ACCENT,
+        fg="#ffffff",
+        activebackground=_ACCENT,
+        activeforeground="#ffffff",
+        relief="flat",
+        font=("Segoe UI", 10),
+        padx=14,
+        pady=7,
+        cursor="hand2",
+    ).pack(pady=(10, 0))
 
-        tk.Label(
-            frame,
-            text=" ".join(self._code),
-            bg=_BG,
-            fg=_ACCENT,
-            font=("Consolas", 40, "bold"),
-        ).pack(pady=(6, 16))
+    tk.Label(
+        frame,
+        text="This window closes by itself once you approve.",
+        bg=_BG,
+        fg=_MUTED,
+        font=("Segoe UI", 8),
+    ).pack(pady=(14, 0))
 
-        tk.Label(
-            frame,
-            text="If your browser did not open, click below.",
-            bg=_BG,
-            fg=_MUTED,
-            font=("Segoe UI", 9),
-            wraplength=340,
-        ).pack()
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() - root.winfo_width()) // 2
+    y = (root.winfo_screenheight() - root.winfo_height()) // 3
+    root.geometry(f"+{x}+{y}")
 
-        tk.Button(
-            frame,
-            text="Open the approval page",
-            command=self._open,
-            bg=_ACCENT,
-            fg="#ffffff",
-            activebackground=_ACCENT,
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", 10),
-            padx=14,
-            pady=7,
-            cursor="hand2",
-        ).pack(pady=(10, 0))
-
-        tk.Label(
-            frame,
-            text="This window closes by itself once you approve.",
-            bg=_BG,
-            fg=_MUTED,
-            font=("Segoe UI", 8),
-        ).pack(pady=(14, 0))
-
-        self._centre(root)
-
-        def poll() -> None:
-            if self._close.is_set():
-                root.destroy()
-                return
-            root.after(CLOSE_POLL_MS, poll)
-
-        root.after(CLOSE_POLL_MS, poll)
-
-        try:
-            root.mainloop()
-        except Exception:  # noqa: BLE001
-            log.debug("Pairing window closed unexpectedly", exc_info=True)
-
-    def _open(self) -> None:
-        try:
-            webbrowser.open(self._url)
-        except Exception as exc:  # noqa: BLE001
-            log.debug("Could not open a browser: %s", exc)
-
-    @staticmethod
-    def _centre(root: object) -> None:
-        root.update_idletasks()  # type: ignore[attr-defined]
-        width = root.winfo_width()  # type: ignore[attr-defined]
-        height = root.winfo_height()  # type: ignore[attr-defined]
-        x = (root.winfo_screenwidth() - width) // 2  # type: ignore[attr-defined]
-        y = (root.winfo_screenheight() - height) // 3  # type: ignore[attr-defined]
-        root.geometry(f"+{x}+{y}")  # type: ignore[attr-defined]
+    root.mainloop()
