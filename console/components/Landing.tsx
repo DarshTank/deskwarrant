@@ -64,9 +64,9 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
               <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#trust">
                 Privacy
               </a>
-              <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#setup">
-                Setup
-              </a>
+              <Link className="hidden whitespace-nowrap hover:text-ink lg:inline" href="/download">
+                Download
+              </Link>
               <ThemeToggle className="p-1.5" />
               <Link
                 href={ctaHref}
@@ -250,9 +250,20 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
                   {step.n}
                 </span>
                 <h3 className="text-[19px] font-medium">{step.title}</h3>
-                <p className="col-start-2 max-w-[52ch] text-soft sm:col-start-3">
-                  {step.body}
-                </p>
+                <div className="col-start-2 max-w-[52ch] text-soft sm:col-start-3">
+                  <p>{step.body}</p>
+                  {step.n === "01" && (
+                    <div className="mt-3.5">
+                      <Link
+                        href="/download"
+                        className="inline-flex items-center gap-2 rounded-full border border-line bg-raised px-4 py-2 text-[14px] font-medium text-ink transition-colors hover:border-signal hover:text-signal"
+                      >
+                        <DownloadGlyph />
+                        Download Windows app →
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -702,4 +713,24 @@ function useReveal() {
       clearInterval(timer);
     };
   }, []);
+}
+
+function DownloadGlyph() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
 }
