@@ -10,7 +10,8 @@ on any other device — laptop, desktop, or phone — and can:
 - **Act** through natural language ("close Chrome"), executed from a fixed, typed
   action catalog.
 - **Watch** — the PC pushes notifications when predefined conditions occur.
-- **Control** — a live screen view with mouse and keyboard.
+- **Control** — a live screen view with mouse and keyboard, windowed or full
+  screen with the remote pointer drawn in.
 
 Ask, Act, and Watch need no video session at all. During Control, the chat panel
 stays live, so you can delegate a task and watch it happen.
@@ -346,9 +347,14 @@ cost and is worth an application now that the repo is public.
 | Rate limiting | Per-device caps on job creation, event submission, and view-token issuance |
 
 **On prompt injection specifically:** the structural defence is that the model
-cannot express a dangerous action. It picks a name from a 13-entry catalog and
+cannot express a dangerous action. It picks a name from a 21-entry catalog and
 supplies typed arguments; it cannot emit a shell command or a path outside the
-allowlist. The system prompt's instruction to treat tool output as data is a
+allowlist. Where a tool must reach something the filesystem allowlist cannot
+name, it takes an opaque id instead of a path: `launch_app` accepts only an
+`appId` that `list_apps` produced, the same indirection `hwnd` and `pid`
+already use, so an injected instruction cannot name a target that was never
+listed. Shells, terminals, and language interpreters are excluded from that
+listing outright. The system prompt's instruction to treat tool output as data is a
 behavioural backstop on top of that, not the primary control. Beneath both,
 `kill_process` refuses protected PIDs outright — so even a fully successful
 injection saying "kill PID 4" fails closed.
@@ -396,5 +402,6 @@ behind an explicit per-device opt-in.
 
 See [CHECKPOINTS.md](CHECKPOINTS.md) for the per-stage verification procedure.
 Each stage has a concrete, manually verifiable condition — run them in order.
-#   d e s k w a r r a n t  
+#   d e s k w a r r a n t 
+ 
  

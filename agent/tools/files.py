@@ -6,6 +6,7 @@ not this one, is the security boundary.
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ from config import AgentConfig
 from safety import (
     SafetyError,
     matches_pattern,
+    optional_int,
     optional_str,
     require_str,
     resolve_allowed_path,
@@ -25,6 +27,15 @@ PARTIAL_SUFFIXES = {".crdownload", ".part", ".tmp", ".download", ".partial"}
 
 MAX_ENTRIES = 300
 DOWNLOAD_SAMPLE_SECONDS = 2.0
+
+# find_files walks real directory trees, so it is bounded three ways: a
+# depth cap, a result cap, and a wall-clock deadline. The deadline is the
+# important one -- tools run on the shared executor, and an unbounded walk
+# of a deep Documents tree would stall the poll loop behind it.
+FIND_MAX_RESULTS = 200
+FIND_DEFAULT_RESULTS = 50
+FIND_MAX_DEPTH = 6
+FIND_DEADLINE_SECONDS = 5.0
 
 
 def _is_partial(name: str) -> bool:
@@ -184,4 +195,89 @@ def _most_recent_file(folder: Path) -> dict[str, Any] | None:
         "name": path.name,
         "sizeBytes": size,
         "modifiedAt": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
+    }
+
+
+# ---------- search ----------
+
+
+def _name_matches(name: str, query: str, is_glob: bool) -> bool:
+    if is_glob:
+        return matches_pattern(name, query)
+    return query in name.lower()
+
+
+def _walk_matches(
+    roots: list[Path], query: str, is_glob: bool, deadline: float
+):
+    """Yield matching paths across every root, depth- and time-bounded."""
+    for root in roots:
+        base_depth = len(root.parts)
+        # onerror=None swallows permission errors on individual subtrees, which
+        # is right here: one unreadable folder should not fail the whole search.
+        for dirpath, dirnames, filenames in os.walk(root, onerror=None):
+            if time.monotonic() > deadline:
+                return
+
+            # Pruned in place, because that is the only way os.walk skips a
+            # subtree. Dot-directories go first so they are neither searched
+            # nor reported.
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+            current = Path(dirpath)
+            for name in (*dirnames, *filenames):
+                if _name_matches(name, query, is_glob):
+                    yield current / name
+
+            if len(current.parts) - base_depth >= FIND_MAX_DEPTH:
+                dirnames[:] = []
+
+
+def find_files(args: dict[str, Any], config: AgentConfig) -> dict[str, Any]:
+    """Search the allowlisted roots for files and folders matching a name.
+
+    A query containing a glob metacharacter is matched as a glob; anything else
+    is a case-insensitive substring, which is what "find my invoice" wants.
+    """
+    raw_query = require_str(args, "query", max_length=100).strip()
+    raw_root = optional_str(args, "root")
+    limit = optional_int(
+        args, "limit", FIND_DEFAULT_RESULTS, minimum=1, maximum=FIND_MAX_RESULTS
+    )
+
+    query = raw_query.lower()
+    is_glob = any(ch in query for ch in "*?[")
+
+    if raw_root:
+        root = resolve_allowed_path(raw_root, config)
+        if not root.is_dir():
+            raise SafetyError("That folder does not exist.")
+        roots = [root]
+    else:
+        roots = config.resolved_roots()
+        if not roots:
+            raise SafetyError("No accessible folders are configured on this PC.")
+
+    deadline = time.monotonic() + FIND_DEADLINE_SECONDS
+    rows: list[dict[str, Any]] = []
+    for path in _walk_matches(roots, query, is_glob, deadline):
+        entry = _entry(path)
+        if entry is None:
+            continue
+        entry["path"] = str(path)
+        rows.append(entry)
+        if len(rows) >= limit:
+            break
+
+    timed_out = time.monotonic() > deadline
+
+    # Newest first: "where did I save that" almost always means the recent one.
+    rows.sort(key=lambda r: r["modifiedAt"], reverse=True)
+
+    return {
+        "query": raw_query,
+        "searched": [str(r) for r in roots],
+        "matches": rows,
+        "truncated": len(rows) >= limit or timed_out,
+        "timedOut": timed_out,
     }

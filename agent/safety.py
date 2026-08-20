@@ -123,6 +123,18 @@ def require_int(args: dict, key: str, *, minimum: int | None = None,
     return as_int
 
 
+def require_bool(args: dict, key: str) -> bool:
+    """Strict boolean: 0/1 and "true" are rejected.
+
+    Coercing here would let a malformed job flip a toggle the user never asked
+    for, so the argument must already be a real boolean.
+    """
+    value = args.get(key)
+    if not isinstance(value, bool):
+        raise SafetyError(f"`{key}` must be true or false.")
+    return value
+
+
 def optional_int(args: dict, key: str, default: int, *, minimum: int,
                  maximum: int) -> int:
     if args.get(key) is None:

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const ITEMS = [
   { href: "/devices", label: "Devices", icon: MonitorGlyph },
+  { href: "/actions", label: "Actions", icon: ListGlyph },
   { href: "/download", label: "Add a PC", icon: PlusGlyph },
 ];
 
@@ -43,7 +44,7 @@ export function SidebarLinks() {
 }
 
 /**
- * The narrow-screen rail. Labels stay visible — with only two destinations,
+ * The narrow-screen rail. Labels stay visible — at this many destinations,
  * icons alone would be a guessing game for no space saved.
  */
 export function TopBarLinks() {
@@ -87,6 +88,30 @@ function MonitorGlyph() {
     >
       <rect x="2.5" y="4" width="19" height="13" rx="2" />
       <path d="M8.5 21h7M12 17v4" />
+    </svg>
+  );
+}
+
+function ListGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <line x1="9" y1="7" x2="20" y2="7" />
+      <line x1="9" y1="12" x2="20" y2="12" />
+      <line x1="9" y1="17" x2="20" y2="17" />
+      <circle cx="4.5" cy="7" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="17" r="1.2" fill="currentColor" stroke="none" />
     </svg>
   );
 }

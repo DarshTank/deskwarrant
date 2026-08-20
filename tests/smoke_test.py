@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import re
 import struct
 import sys
 import traceback
@@ -66,12 +67,26 @@ print("=" * 70)
 print("2. TOOL REGISTRY vs CONSOLE CATALOG")
 print("=" * 70)
 
-CONSOLE_TOOLS = {
-    "list_processes", "list_windows", "read_window_text", "list_folder",
-    "get_system_stats", "get_download_status", "focus_window",
-    "minimize_window", "open_path", "set_volume", "close_window",
-    "kill_process", "lock_workstation",
-}
+# Parsed out of the console catalog rather than hand-copied. A duplicated list
+# goes stale the moment a tool is added -- which is the exact drift this check
+# exists to catch, so copying it here would defeat the test.
+TOOLS_TS = (
+    Path(__file__).resolve().parent.parent
+    / "console" / "lib" / "assistant" / "tools.ts"
+)
+
+
+def console_tool_names():
+    source = TOOLS_TS.read_text(encoding="utf-8")
+    block = source[
+        source.index("export const TOOLS"): source.index("export const TOOLS_BY_NAME")
+    ]
+    return set(re.findall(r'name:\s*"([a-z_]+)"', block))
+
+
+CONSOLE_TOOLS = console_tool_names()
+if not CONSOLE_TOOLS:
+    FAILURES.append(("console catalog", f"parsed no tool names from {TOOLS_TS}"))
 agent_tools = set(REGISTRY)
 if agent_tools == CONSOLE_TOOLS:
     PASSES.append(f"registry matches console catalog ({len(agent_tools)} tools)")
@@ -79,6 +94,29 @@ else:
     FAILURES.append((
         "registry parity",
         f"agent-only={agent_tools - CONSOLE_TOOLS} console-only={CONSOLE_TOOLS - agent_tools}",
+    ))
+
+# The public actions page documents every tool, and guide.ts throws at build
+# time if one is missing. That guard is authoritative, but it only fires on a
+# build -- this catches the omission on the next test run instead.
+GUIDE_TS = TOOLS_TS.parent / "guide.ts"
+
+
+def documented_tool_names():
+    source = GUIDE_TS.read_text(encoding="utf-8")
+    block = source[
+        source.index("export const TOOL_GUIDE"): source.index("export interface ChainedExample")
+    ]
+    return set(re.findall(r"^  ([a-z_]+): \{", block, flags=re.M))
+
+
+documented = documented_tool_names()
+if documented == agent_tools:
+    PASSES.append(f"actions page documents every tool ({len(documented)})")
+else:
+    FAILURES.append((
+        "docs coverage",
+        f"undocumented={agent_tools - documented} documented-but-gone={documented - agent_tools}",
     ))
 
 print()
@@ -216,6 +254,96 @@ async def run_tools():
     except ToolError as exc:
         PASSES.append(f"kill_process(self) -> refused: {str(exc)[:60]}")
 
+    # ---- audio and window symmetry ----
+    #
+    # Only refusal paths are exercised for the write tools: a passing test must
+    # not mute the machine it runs on or skip the user's track.
+
+    vol = await dispatch("get_volume", {}, cfg)
+    assert "level" in vol and "muted" in vol, "get_volume shape"
+    assert 0 <= vol["level"] <= 100, f"level out of range: {vol['level']}"
+    PASSES.append(f"get_volume -> level={vol['level']} muted={vol['muted']}")
+
+    for bad in ({"muted": "true"}, {"muted": 1}, {}):
+        try:
+            await dispatch("set_mute", bad, cfg)
+            FAILURES.append(("set_mute", f"accepted non-boolean {bad}"))
+        except ToolError:
+            pass
+    PASSES.append("set_mute -> rejects non-boolean muted (no coercion)")
+
+    try:
+        await dispatch("media_key", {"key": "sudo_rm_rf"}, cfg)
+        FAILURES.append(("media_key", "accepted an unknown key"))
+    except ToolError as exc:
+        PASSES.append(f"media_key(unknown) -> refused: {str(exc)[:50]}")
+
+    for tool in ("maximize_window", "restore_window"):
+        try:
+            await dispatch(tool, {"hwnd": 999999999}, cfg)
+            FAILURES.append((tool, "accepted a bogus hwnd"))
+        except ToolError:
+            PASSES.append(f"{tool}(bogus hwnd) -> refused")
+
+    # ---- app launching ----
+
+    apps = await dispatch("list_apps", {}, cfg)
+    assert "apps" in apps and "count" in apps, "list_apps shape"
+    PASSES.append(f"list_apps -> {apps['count']} apps")
+
+    # The denylist is the whole safety story for launch_app, so it is checked
+    # against the real Start Menu rather than a fixture.
+    shell_names = {
+        "cmd", "command prompt", "powershell", "windows powershell",
+        "windows terminal", "git bash", "git cmd", "registry editor",
+        "node.js", "python 3.11 (64-bit)", "python 3.13 (64-bit)",
+    }
+    leaked = [a["name"] for a in apps["apps"] if a["name"].strip().lower() in shell_names]
+    if leaked:
+        FAILURES.append(("list_apps denylist", f"shells listed: {leaked}"))
+    else:
+        PASSES.append("list_apps -> no shells or interpreters listed")
+
+    if apps["apps"]:
+        first = apps["apps"][0]
+        assert re.fullmatch(r"[0-9a-f]{12}", first["appId"]), "appId format"
+        PASSES.append(f"  appId is opaque and well-formed: {first['appId']}")
+
+    for bad in ("../../evil", "ZZZZZZZZZZZZ", "abcdef123456"):
+        try:
+            await dispatch("launch_app", {"appId": bad}, cfg)
+            FAILURES.append(("launch_app", f"accepted {bad!r}"))
+        except ToolError:
+            pass
+    PASSES.append("launch_app -> rejects malformed and unknown ids")
+
+    # ---- file search ----
+
+    found = await dispatch("find_files", {"query": "*.txt", "limit": 5}, cfg)
+    assert "matches" in found and "searched" in found, "find_files shape"
+    assert len(found["matches"]) <= 5, "limit not honoured"
+    PASSES.append(
+        f"find_files(*.txt) -> {len(found['matches'])} matches "
+        f"truncated={found['truncated']} timedOut={found['timedOut']}"
+    )
+
+    # `root` is a third path-bearing argument, and it must be gated exactly as
+    # `path` and `folder` are.
+    system_root = os.environ.get("SystemRoot", os.path.join("C:", os.sep, "Windows"))
+    try:
+        await dispatch("find_files", {"query": "x", "root": system_root}, cfg)
+        FAILURES.append(("find_files root", f"ALLOWED {system_root}"))
+    except ToolError as exc:
+        PASSES.append(f"find_files(root=SystemRoot) -> refused: {str(exc)[:50]}")
+
+    if downloads:
+        escape = os.path.join(str(downloads), "..", "..", "..", "Windows")
+        try:
+            await dispatch("find_files", {"query": "x", "root": escape}, cfg)
+            FAILURES.append(("find_files traversal", "ALLOWED - escaped the allowlist"))
+        except ToolError:
+            PASSES.append("find_files(.. traversal out of Downloads) -> refused")
+
 
 check("read tools", lambda: asyncio.run(run_tools()))
 
@@ -289,8 +417,50 @@ def test_encoder():
     assert enc.quality == 25 and enc.lower_quality() is False
     PASSES.append(f"backpressure: quality {q0} -> floor {enc.quality}")
 
+    # ...and a viewer going fullscreen can ask for it back. Without this a
+    # session that hit backpressure once would sit at the floor for its life.
+    assert enc.set_quality(88) is True and enc.quality == 88
+    assert enc.set_quality(88) is False, "no-op change reported as a change"
+    assert enc.set_quality(5000) is True and enc.quality == 95, "no upper clamp"
+    assert enc.set_quality(1) is True and enc.quality == 25, "no lower clamp"
+    PASSES.append("set_quality: raises, clamps to 25-95, no-ops when unchanged")
+
+
+def test_cursor_frames():
+    from PIL import Image
+    from server.capture import FrameEncoder
+
+    enc = FrameEncoder(tile_size=128, quality=70)
+    still = Image.new("RGB", (320, 240), (5, 5, 5))
+
+    assert enc.encode(still, cursor=(0.1, 0.1)) is not None, "first frame missing"
+    assert enc.encode(still, cursor=(0.1, 0.1)) is None, \
+        "static screen and still pointer must cost nothing"
+
+    # A pointer crossing a static desktop changes no tile. Returning None there
+    # would freeze the drawn cursor, so a tile-less frame carries the position.
+    moved = enc.encode(still, cursor=(0.4, 0.2))
+    assert moved is not None, "cursor move produced no frame"
+    mlen = struct.unpack("<I", moved[:4])[0]
+    mheader = json.loads(moved[4:4 + mlen].decode("utf-8"))
+    assert mheader["tiles"] == [], "cursor-only frame carried tiles"
+    assert mheader["cx"] == 0.4 and mheader["cy"] == 0.2, "cursor missing"
+    PASSES.append(
+        f"cursor-only frame: {len(moved)}B, no tiles, cx/cy in header"
+    )
+
+    # Off-monitor pointers are omitted rather than clamped to an edge, so the
+    # browser can hide the cursor instead of drawing a fake one.
+    off = enc.encode(still, cursor=None)
+    assert off is not None, "cursor leaving the monitor produced no frame"
+    olen = struct.unpack("<I", off[:4])[0]
+    oheader = json.loads(off[4:4 + olen].decode("utf-8"))
+    assert "cx" not in oheader and "cy" not in oheader, "absent cursor still sent"
+    PASSES.append("cursor off-monitor -> cx/cy omitted from the header")
+
 
 check("frame encoder", test_encoder)
+check("cursor frames", test_cursor_frames)
 
 print()
 print("=" * 70)

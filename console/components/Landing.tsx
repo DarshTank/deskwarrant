@@ -64,6 +64,9 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
               <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#trust">
                 Privacy
               </a>
+              <Link className="hidden whitespace-nowrap hover:text-ink lg:inline" href="/actions">
+                Actions
+              </Link>
               <Link className="hidden whitespace-nowrap hover:text-ink lg:inline" href="/download">
                 Download
               </Link>

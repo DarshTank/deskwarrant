@@ -78,10 +78,46 @@ export const getDownloadStatusArgs = z.object({
     ),
 });
 
+export const findFilesArgs = z.object({
+  query: z
+    .string()
+    .min(1)
+    .max(100)
+    .describe(
+      "Name to look for. Containing * or ? makes it a glob ('*.pdf'); anything else is a case-insensitive substring ('invoice').",
+    ),
+  root: z
+    .string()
+    .max(400)
+    .optional()
+    .describe(
+      "Single allowlisted folder to search. Defaults to searching every allowlisted root.",
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Maximum matches to return. Defaults to 50, hard cap 200."),
+});
+
+export const getVolumeArgs = z.object({});
+
+export const listAppsArgs = z.object({
+  filter: z
+    .string()
+    .max(64)
+    .optional()
+    .describe("Case-insensitive substring matched against the app name."),
+});
+
 // ---------- Action tools (§8.2) ----------
 
 export const focusWindowArgs = z.object({ hwnd });
 export const minimizeWindowArgs = z.object({ hwnd });
+export const maximizeWindowArgs = z.object({ hwnd });
+export const restoreWindowArgs = z.object({ hwnd });
 
 export const openPathArgs = z.object({
   path: z
@@ -100,6 +136,26 @@ export const setVolumeArgs = z.object({
     .min(0)
     .max(100)
     .describe("Master output volume percentage."),
+});
+
+export const launchAppArgs = z.object({
+  appId: z
+    .string()
+    .regex(
+      /^[0-9a-f]{12}$/,
+      "appId must be a 12-character id returned by list_apps.",
+    )
+    .describe("Opaque app id, as returned by list_apps."),
+});
+
+export const setMuteArgs = z.object({
+  muted: z.boolean().describe("True to mute, false to unmute."),
+});
+
+export const mediaKeyArgs = z.object({
+  key: z
+    .enum(["play_pause", "next", "previous", "stop"])
+    .describe("Which media transport key to press."),
 });
 
 export const closeWindowArgs = z.object({ hwnd });
@@ -154,6 +210,14 @@ export const TOOLS: ToolDefinition[] = [
     schema: listFolderArgs,
   },
   {
+    name: "find_files",
+    kind: "read",
+    requiresConfirmation: false,
+    description:
+      "Search the user's folders for a file or folder by name when its location is unknown. Results are newest-first. Prefer list_folder when the folder is already known, and note the search is bounded by time and depth, so `truncated` may be true.",
+    schema: findFilesArgs,
+  },
+  {
     name: "get_system_stats",
     kind: "read",
     requiresConfirmation: false,
@@ -168,6 +232,22 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Check whether downloads are in progress. Scans a folder for partial-download files and samples their size over two seconds to distinguish actively growing from stalled. Prefer this over list_folder when asked whether a download has finished.",
     schema: getDownloadStatusArgs,
+  },
+  {
+    name: "get_volume",
+    kind: "read",
+    requiresConfirmation: false,
+    description:
+      "Get the current master output volume and mute state. Call this first when the user asks for a relative change such as 'turn it down a bit', so the new level is based on the real one.",
+    schema: getVolumeArgs,
+  },
+  {
+    name: "list_apps",
+    kind: "read",
+    requiresConfirmation: false,
+    description:
+      "List the applications installed on this PC, each with an opaque appId. Use this to find an app before launching it. Shells, terminals, and language interpreters are deliberately excluded and will not appear.",
+    schema: listAppsArgs,
   },
   {
     name: "focus_window",
@@ -185,6 +265,21 @@ export const TOOLS: ToolDefinition[] = [
     schema: minimizeWindowArgs,
   },
   {
+    name: "maximize_window",
+    kind: "action",
+    requiresConfirmation: false,
+    description: "Maximize a window to fill the screen.",
+    schema: maximizeWindowArgs,
+  },
+  {
+    name: "restore_window",
+    kind: "action",
+    requiresConfirmation: false,
+    description:
+      "Restore a window to its previous size and position, undoing either a minimize or a maximize.",
+    schema: restoreWindowArgs,
+  },
+  {
     name: "open_path",
     kind: "action",
     requiresConfirmation: false,
@@ -193,11 +288,35 @@ export const TOOLS: ToolDefinition[] = [
     schema: openPathArgs,
   },
   {
+    name: "launch_app",
+    kind: "action",
+    requiresConfirmation: false,
+    description:
+      "Start an installed application. The appId must come from list_apps -- this tool cannot launch anything that list_apps did not return, and it cannot take a path.",
+    schema: launchAppArgs,
+  },
+  {
     name: "set_volume",
     kind: "action",
     requiresConfirmation: false,
     description: "Set the master output volume to a percentage.",
     schema: setVolumeArgs,
+  },
+  {
+    name: "set_mute",
+    kind: "action",
+    requiresConfirmation: false,
+    description:
+      "Mute or unmute the master output. Prefer this over setting the volume to 0 when the user asks to mute, because it preserves the level to unmute back to.",
+    schema: setMuteArgs,
+  },
+  {
+    name: "media_key",
+    kind: "action",
+    requiresConfirmation: false,
+    description:
+      "Press a media transport key. Windows routes it to whatever is playing audio, so use this for play, pause, skip, and previous rather than locating the player's window first. It works even when the player is minimized.",
+    schema: mediaKeyArgs,
   },
   {
     name: "close_window",
@@ -277,6 +396,14 @@ export function isObviouslyDeniedPath(input: string): boolean {
   return DENIED_PATH_PATTERNS.some((re) => re.test(p));
 }
 
+/**
+ * Argument names that carry a filesystem path. Every tool that takes one must
+ * name its parameter from this list, so the screen below cannot be sidestepped
+ * by calling it something new -- which is exactly how find_files first slipped
+ * past it with `root`.
+ */
+const PATH_ARG_KEYS = ["path", "folder", "root"] as const;
+
 export interface ValidatedToolCall {
   toolName: string;
   args: Record<string, unknown>;
@@ -306,17 +433,14 @@ export function validateToolCall(
 
   const args = parsed.data as Record<string, unknown>;
 
-  if (typeof args.path === "string" && isObviouslyDeniedPath(args.path)) {
-    return {
-      ok: false,
-      error: `Access to "${args.path}" is denied. Only the user's Downloads, Documents, Desktop, Pictures, and Videos folders are permitted.`,
-    };
-  }
-  if (typeof args.folder === "string" && isObviouslyDeniedPath(args.folder)) {
-    return {
-      ok: false,
-      error: `Access to "${args.folder}" is denied.`,
-    };
+  for (const key of PATH_ARG_KEYS) {
+    const value = args[key];
+    if (typeof value === "string" && isObviouslyDeniedPath(value)) {
+      return {
+        ok: false,
+        error: `Access to "${value}" is denied. Only the user's Downloads, Documents, Desktop, Pictures, and Videos folders are permitted.`,
+      };
+    }
   }
 
   return {

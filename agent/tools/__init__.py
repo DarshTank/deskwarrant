@@ -17,13 +17,19 @@ from safety import SafetyError
 from .actions import (
     close_window,
     focus_window,
+    get_volume,
     kill_process,
     lock_workstation,
+    maximize_window,
+    media_key,
     minimize_window,
     open_path,
+    restore_window,
+    set_mute,
     set_volume,
 )
-from .files import get_download_status, list_folder
+from .apps import launch_app, list_apps
+from .files import find_files, get_download_status, list_folder
 from .processes import list_processes
 from .system import get_system_stats
 from .windows import list_windows, read_window_text
@@ -38,13 +44,21 @@ REGISTRY: dict[str, ToolFn] = {
     "list_windows": list_windows,
     "read_window_text": read_window_text,
     "list_folder": list_folder,
+    "find_files": find_files,
     "get_system_stats": get_system_stats,
     "get_download_status": get_download_status,
+    "get_volume": get_volume,
+    "list_apps": list_apps,
     # Action tools (§8.2)
     "focus_window": focus_window,
     "minimize_window": minimize_window,
+    "maximize_window": maximize_window,
+    "restore_window": restore_window,
     "open_path": open_path,
+    "launch_app": launch_app,
     "set_volume": set_volume,
+    "set_mute": set_mute,
+    "media_key": media_key,
     "close_window": close_window,
     "kill_process": kill_process,
     "lock_workstation": lock_workstation,
