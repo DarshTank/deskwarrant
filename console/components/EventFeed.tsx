@@ -63,55 +63,95 @@ export function EventFeed({ deviceId }: { deviceId: string }) {
   const unread = events.filter((e) => !e.readAt).length;
 
   return (
-    <div className="thin-scroll flex-1 overflow-y-auto px-4 py-5">
-      <PushToggle />
+    <div className="thin-scroll flex-1 overflow-y-auto px-[clamp(12px,3vw,24px)] py-6">
+      <div className="max-w-[62ch]">
+        <p className="eyebrow">Events</p>
+        <h2 className="mt-3 font-serif text-[clamp(24px,3.4vw,32px)] leading-[1.08] tracking-[-0.02em]">
+          {unread > 0 ? (
+            <>
+              {unread} thing{unread === 1 ? "" : "s"} happened{" "}
+              <span className="text-soft italic">while you were away.</span>
+            </>
+          ) : (
+            <>
+              All caught up.{" "}
+              <span className="text-soft italic">Nothing waiting.</span>
+            </>
+          )}
+        </h2>
+      </div>
 
-      <div className="mt-6 flex items-center justify-between border-b-2 border-border pb-3">
-        <p className="kicker">
-          {unread > 0 ? `${unread} unread` : "All caught up"}
-        </p>
-        {unread > 0 && (
-          <button
-            type="button"
-            onClick={() => void markAllRead()}
-            className="text-[12px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
-          >
-            Mark all read
-          </button>
-        )}
+      <div className="mt-6">
+        <PushToggle />
       </div>
 
       {error && (
-        <p className="mt-4 border-2 border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
+        <p className="mt-5 rounded-2xl border border-danger/25 bg-danger/[0.07] px-4 py-3 text-[14px] text-danger">
           {error}
         </p>
       )}
 
-      {loading && <p className="mt-5 text-[15px] text-muted">Loading…</p>}
+      {loading && <p className="mt-8 text-[15px] text-faint">Loading…</p>}
 
       {!loading && events.length === 0 && (
-        <p className="mt-6 text-[15px] leading-[1.6] text-muted">
-          No events yet. Add a watch rule and one will appear here when it fires.
+        <p className="mt-8 max-w-[52ch] text-[15px] text-faint">
+          No events yet. Arm a watch rule and the first one will land here — and
+          on your phone, if push is on.
         </p>
       )}
 
-      <ul className="mt-4 space-y-2">
-        {events.map((event) => (
-          <li
-            key={event.id}
-            className={`border-l-4 border-y border-r border-y-hairline border-r-hairline p-3.5 ${
-              event.readAt
-                ? "border-l-hairline bg-surface"
-                : "border-l-accent bg-accent-wash"
-            }`}
-          >
-            <p className="text-[15px] leading-[1.55]">{event.message}</p>
-            <p className="mt-1.5 font-mono text-[11px] uppercase tracking-[0.05em] text-muted">
-              {event.template} · {relativeTime(event.createdAt)}
+      {!loading && events.length > 0 && (
+        <>
+          <div className="mt-9 flex items-center justify-between gap-3 border-b border-line pb-2.5">
+            <p className="eyebrow">
+              {unread > 0 ? `${unread} unread` : "Everything read"}
             </p>
-          </li>
-        ))}
-      </ul>
+            {unread > 0 && (
+              <button
+                type="button"
+                onClick={() => void markAllRead()}
+                className="rounded-full px-3 py-1 text-[13px] text-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
+              >
+                Mark all read
+              </button>
+            )}
+          </div>
+
+          {/* A timeline, not cards: these arrive in order and the order is the
+              point. Unread is marked by the rail, so a read event does not
+              lose its place in the sequence. */}
+          <ul className="mt-1">
+            {events.map((event) => (
+              <li
+                key={event.id}
+                className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-3.5 border-b border-line2 py-4"
+              >
+                <span className="mt-[7px] flex justify-center">
+                  <span
+                    className={`size-1.5 rounded-full ${
+                      event.readAt ? "bg-offline" : "bg-signal dw-beat"
+                    }`}
+                    aria-label={event.readAt ? "Read" : "Unread"}
+                  />
+                </span>
+                <div className="min-w-0">
+                  <p
+                    className={`text-[15px] leading-[1.5] ${
+                      event.readAt ? "text-soft" : "text-ink"
+                    }`}
+                  >
+                    {event.message}
+                  </p>
+                  <p className="mt-1.5 font-mono text-[11.5px] text-faint">
+                    {event.template.toLowerCase()} ·{" "}
+                    {relativeTime(event.createdAt)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

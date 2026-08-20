@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DeviceSummary } from "@/app/api/devices/route";
 import { api, relativeTime } from "@/lib/client-api";
 import { PairDeviceCard } from "./PairDeviceCard";
-import { StatusDot } from "./StatusDot";
+import { ButtonLink, Notice, PageHeading, StatusDot } from "./ui";
 
 const REFRESH_MS = 5_000;
 
@@ -42,94 +42,125 @@ export function DeviceList() {
     };
   }, [refresh]);
 
+  const online = devices?.filter((d) => d.online).length ?? 0;
+  const total = devices?.length ?? 0;
+
   return (
     // The shell no longer scrolls, so this page owns its own scrolling.
     <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10">
-        <div className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-border pb-5">
-          <div>
-            <p className="kicker">Your machines</p>
-            <h1
-              className="mt-3 font-extrabold"
-              style={{
-                fontSize: "clamp(28px, 4vw, 40px)",
-                lineHeight: 1.06,
-                letterSpacing: "-0.03em",
-                marginLeft: "-0.04em",
-              }}
-            >
-              Devices
-            </h1>
-          </div>
-          {devices && devices.length > 0 && (
-            <span className="text-[13px] uppercase tracking-[0.06em] text-muted">
-              {devices.filter((d) => d.online).length} of {devices.length} online
-            </span>
-          )}
-        </div>
+      <div className="mx-auto w-full max-w-6xl px-[clamp(16px,4vw,40px)] py-8 sm:py-10">
+        <PageHeading
+          eyebrow="Your machines"
+          title="Devices"
+          meta={
+            devices === null
+              ? "loading…"
+              : total === 0
+                ? "none paired yet"
+                : `${online} of ${total} online`
+          }
+          actions={
+            total > 0 ? (
+              <ButtonLink href="/download" variant="primary">
+                Add a PC
+              </ButtonLink>
+            ) : undefined
+          }
+        />
 
-        {error && (
-          <p className="mt-6 border-2 border-danger/50 bg-danger/10 px-4 py-2.5 text-[15px] text-danger">
-            {error}
-          </p>
-        )}
+        {error && <Notice className="mt-8">{error}</Notice>}
 
         {devices === null && (
-          <p className="mt-6 text-[15px] text-muted">Loading…</p>
-        )}
-
-        {devices && devices.length === 0 && (
-          <div className="mt-8 border-2 border-border bg-surface p-6">
-            <p className="kicker kicker-muted">Nothing here yet</p>
-            <h2 className="mt-3 text-[20px] font-bold">No devices paired</h2>
-            <p className="mt-2 text-[15px] leading-[1.6] text-muted">
-              Run the agent on your Windows PC. It will open this console and
-              ask you to approve it.
-            </p>
-          </div>
-        )}
-
-        {devices && devices.length > 0 && (
-          <ul className="mt-8 grid gap-4 sm:grid-cols-2">
-            {devices.map((device) => (
-              <li key={device.id}>
-                <Link
-                  href={`/devices/${device.id}`}
-                  className="block border-2 border-border bg-surface p-5 transition-colors hover:border-accent"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <StatusDot online={device.online} />
-                        <span className="truncate text-[17px] font-bold">
-                          {device.name}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 truncate font-mono text-[12px] text-muted">
-                        {device.osVersion} · agent {device.agentVersion}
-                      </p>
-                    </div>
-                    {device.unreadEvents > 0 && (
-                      <span className="shrink-0 bg-accent px-2 py-0.5 text-[12px] font-extrabold text-accent-fg">
-                        {device.unreadEvents}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-4 border-t border-hairline pt-3 text-[12px] uppercase tracking-[0.06em] text-muted">
-                    {device.online
-                      ? "Online"
-                      : `Last seen ${relativeTime(device.lastSeenAt)}`}
-                  </p>
-                </Link>
-              </li>
+          <ul className="mt-9 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <li
+                key={i}
+                aria-hidden="true"
+                className="h-[168px] animate-pulse rounded-2xl border border-line bg-ink/[0.03]"
+              />
             ))}
           </ul>
         )}
 
-        <div className="mt-10">
-          <PairDeviceCard onPaired={refresh} />
-        </div>
+        {devices !== null && total === 0 && (
+          <div className="mt-9">
+            <PairDeviceCard onPaired={refresh} empty />
+          </div>
+        )}
+
+        {devices !== null && total > 0 && (
+          <>
+            <ul className="mt-9 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {devices.map((device) => (
+                <li key={device.id}>
+                  <DeviceCard device={device} />
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-10">
+              <PairDeviceCard onPaired={refresh} />
+            </div>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The card is the whole hit target, which is why the name is a plain span and
+ * not a nested link. The arrow is the only affordance that moves — a card that
+ * lifts on hover competes with the status dot for attention.
+ */
+function DeviceCard({ device }: { device: DeviceSummary }) {
+  return (
+    <Link
+      href={`/devices/${device.id}`}
+      className="group flex h-full flex-col rounded-2xl border border-line bg-raised p-5 transition-colors hover:border-ink/25"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <StatusDot online={device.online} />
+          <span className="truncate font-serif text-[22px] leading-tight tracking-[-0.015em]">
+            {device.name}
+          </span>
+        </span>
+        {device.unreadEvents > 0 && (
+          <span className="shrink-0 rounded-full bg-signal-soft px-2.5 py-0.5 text-[12px] font-medium text-signal">
+            {device.unreadEvents} new
+          </span>
+        )}
+      </div>
+
+      <dl className="mt-5 space-y-1.5 font-mono text-[12px] text-faint">
+        <div className="flex justify-between gap-4">
+          <dt className="shrink-0">host</dt>
+          <dd className="truncate text-soft">{device.hostname}</dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="shrink-0">os</dt>
+          <dd className="truncate text-soft">{device.osVersion}</dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="shrink-0">agent</dt>
+          <dd className="truncate text-soft">{device.agentVersion}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-line2 pt-4 text-[13px]">
+        <span className={device.online ? "text-signal" : "text-faint"}>
+          {device.online
+            ? "Answering now"
+            : `Last seen ${relativeTime(device.lastSeenAt)}`}
+        </span>
+        <span
+          aria-hidden="true"
+          className="text-soft transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] group-hover:translate-x-1"
+        >
+          →
+        </span>
+      </div>
+    </Link>
   );
 }

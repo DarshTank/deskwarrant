@@ -1,40 +1,260 @@
 /**
- * The mark: a solid accent square with a chevron and a command underscore cut
- * out of it — a prompt, which is what the product actually is.
+ * The DeskWarrant Instrument Seal Logo:
+ * High-visibility, high-contrast authoritative emblem featuring the sovereign beacon,
+ * the encrypted harmonic leash orbit, and the remote desktop terminal horizon.
  */
-export function Logo({ size = 30 }: { size?: number }) {
-  return (
-    <span
-      className="block shrink-0 bg-accent"
-      style={{ width: size, height: size }}
-      aria-hidden="true"
-    >
-      <svg viewBox="0 0 30 30" width={size} height={size}>
-        <path
-          d="M8 10 L13 15 L8 20"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="2.6"
-        />
-        <rect x="16" y="18.5" width="7" height="2.5" fill="#fff" />
-      </svg>
-    </span>
-  );
-}
-
-export function Wordmark({
-  size = 30,
+export function Logo({
+  size = 32,
   className = "",
 }: {
   size?: number;
   className?: string;
 }) {
   return (
-    <span className={`flex items-center gap-3 ${className}`}>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 500 500"
+      fill="none"
+      aria-hidden="true"
+      className={`shrink-0 block ${className}`}
+    >
+      <defs>
+        {/* Gradients */}
+        <linearGradient id="dw-seal-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#1C1C24" />
+          <stop offset="50%" stopColor="#121217" />
+          <stop offset="100%" stopColor="#08080B" />
+        </linearGradient>
+
+        <linearGradient id="dw-seal-signal" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#A7F3D0" />
+          <stop offset="35%" stopColor="#62D4B0" />
+          <stop offset="100%" stopColor="#1D6B57" />
+        </linearGradient>
+
+        <linearGradient id="dw-seal-border" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#62D4B0" stopOpacity="0.9" />
+          <stop offset="50%" stopColor="#ffffff" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="#1D6B57" stopOpacity="0.7" />
+        </linearGradient>
+
+        <filter id="dw-seal-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="8" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        <filter id="dw-seal-core-glow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="10" result="blur" />
+          <feColorMatrix
+            type="matrix"
+            values="0 0 0 0 0.384  0 0 0 0 0.831  0 0 0 0 0.690  0 0 0 0.95 0"
+            result="coloredBlur"
+          />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+
+        {/* Circular text path for engraved emblem text */}
+        <path
+          id="dw-seal-text-path"
+          d="M 250,250 m -202,0 a 202,202 0 1,1 404,0 a 202,202 0 1,1 -404,0"
+        />
+      </defs>
+
+      {/* Base Plate & Bezel */}
+      <circle cx="250" cy="250" r="242" fill="url(#dw-seal-bg)" />
+      <circle cx="250" cy="250" r="242" stroke="url(#dw-seal-border)" strokeWidth="3.5" />
+      <circle
+        cx="250"
+        cy="250"
+        r="230"
+        stroke="#62D4B0"
+        strokeWidth="1.2"
+        strokeDasharray="3 6"
+        opacity="0.6"
+      />
+
+      {/* Engraved Circular Legend Text */}
+      <text
+        fontFamily="var(--font-jetbrains-mono), monospace"
+        fontSize="12.5"
+        fontWeight="700"
+        letterSpacing="0.38em"
+        fill="#A8A5B0"
+      >
+        <textPath href="#dw-seal-text-path" startOffset="0%">
+          DESKWARRANT · INSTRUMENT PC AGENT · NATURAL LANGUAGE REMOTE CONTROL ·
+        </textPath>
+      </text>
+
+      {/* Concentric Telemetry Reference Rings */}
+      <g opacity="0.35">
+        <circle cx="250" cy="250" r="172" stroke="#62D4B0" strokeWidth="1" strokeDasharray="6 8" />
+        <ellipse
+          cx="250"
+          cy="250"
+          rx="170"
+          ry="65"
+          stroke="#62D4B0"
+          strokeWidth="1.2"
+          transform="rotate(-28 250 250)"
+        />
+      </g>
+
+      {/* ==================== HIGH-VISIBILITY CENTRAL ELEMENTS ==================== */}
+
+      {/* The Leash / Orbit Wave (Bold and Radiant) */}
+      <path
+        d="M135 145 C 135 375, 195 395, 305 395 C 395 395, 425 345, 425 285 C 425 210, 360 190, 305 190"
+        stroke="#1D6B57"
+        strokeWidth="24"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.45"
+        filter="url(#dw-seal-glow)"
+      />
+
+      <path
+        d="M135 145 C 135 375, 195 395, 305 395 C 395 395, 425 345, 425 285 C 425 210, 360 190, 305 190"
+        stroke="url(#dw-seal-signal)"
+        strokeWidth="8"
+        strokeLinecap="round"
+        fill="none"
+      />
+
+      {/* The Remote Desktop Terminal Horizon (Bold) */}
+      <g transform="translate(10, -8)">
+        {/* Stand */}
+        <path
+          d="M295 338 L295 365 M265 365 L325 365"
+          stroke="#f2f1ee"
+          strokeWidth="5"
+          strokeLinecap="round"
+          opacity="0.8"
+        />
+
+        {/* Monitor Outer Chassis */}
+        <rect
+          x="195"
+          y="172"
+          width="200"
+          height="160"
+          rx="18"
+          fill="#15161E"
+          stroke="#f2f1ee"
+          strokeWidth="5.5"
+        />
+
+        {/* Screen Inner Viewport */}
+        <rect
+          x="210"
+          y="186"
+          width="170"
+          height="130"
+          rx="11"
+          fill="#080B10"
+          stroke="#62D4B0"
+          strokeWidth="2"
+          strokeOpacity="0.6"
+        />
+
+        {/* Terminal Command Line & Prompt inside */}
+        {/* Bold '>' character */}
+        <path
+          d="M228 220 L242 229 L228 238"
+          stroke="#62D4B0"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Blinking Cursor Block */}
+        <rect x="250" y="217" width="8" height="24" rx="2" fill="#62D4B0">
+          <animate attributeName="opacity" values="1;0.2;1" dur="1.4s" repeatCount="indefinite" />
+        </rect>
+        {/* Query Output Line */}
+        <line
+          x1="268"
+          y1="229"
+          x2="360"
+          y2="229"
+          stroke="#ffffff"
+          strokeWidth="4"
+          strokeLinecap="round"
+          opacity="0.45"
+        />
+
+        {/* Telemetry Sparkline Vector */}
+        <path
+          d="M228 280 L250 280 L262 265 L278 290 L296 268 L314 280 L360 280"
+          fill="none"
+          stroke="#62D4B0"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          filter="url(#dw-seal-glow)"
+        />
+      </g>
+
+      {/* The Active Sovereign Beacon Node (Large & Highly Visible) */}
+      <circle
+        cx="135"
+        cy="145"
+        r="54"
+        fill="none"
+        stroke="#62D4B0"
+        strokeWidth="2"
+        strokeDasharray="5 7"
+        opacity="0.5"
+      />
+      <circle
+        cx="135"
+        cy="145"
+        r="38"
+        fill="#1D6B57"
+        fillOpacity="0.35"
+        stroke="#62D4B0"
+        strokeWidth="3"
+        strokeOpacity="0.9"
+      />
+      <circle
+        cx="135"
+        cy="145"
+        r="24"
+        fill="url(#dw-seal-signal)"
+        filter="url(#dw-seal-core-glow)"
+      />
+      <circle cx="135" cy="145" r="9" fill="#FFFFFF" />
+
+      {/* Cross-hairs on Signal Node */}
+      <g stroke="#62D4B0" strokeWidth="3" strokeLinecap="round" opacity="0.95">
+        <line x1="135" y1="94" x2="135" y2="105" />
+        <line x1="135" y1="185" x2="135" y2="196" />
+        <line x1="84" y1="145" x2="95" y2="145" />
+        <line x1="175" y1="145" x2="186" y2="145" />
+      </g>
+    </svg>
+  );
+}
+
+export function Wordmark({
+  size = 34,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <span className={`inline-flex items-center gap-3 text-ink ${className}`}>
       <Logo size={size} />
       <span
-        className="font-extrabold tracking-[-0.02em]"
-        style={{ fontSize: Math.round(size * 0.6) }}
+        className="font-serif tracking-[-0.01em] leading-none"
+        style={{ fontSize: Math.round(size * 0.68) }}
       >
         DeskWarrant
       </span>

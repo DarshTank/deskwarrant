@@ -7,8 +7,8 @@ import { api, relativeTime } from "@/lib/client-api";
 import { Chat } from "./Chat";
 import { EventFeed } from "./EventFeed";
 import { LiveView } from "./LiveView";
-import { StatusDot } from "./StatusDot";
 import { WatchRules } from "./WatchRules";
+import { Button, Segmented, StatusDot, inputClass } from "./ui";
 
 interface DeviceDetail {
   id: string;
@@ -57,6 +57,7 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
   async function rename() {
     const name = nameDraft.trim();
     if (!name || name === device.name) {
+      setNameDraft(device.name);
       setRenaming(false);
       return;
     }
@@ -90,97 +91,94 @@ export function DeviceWorkspace({ initial }: { initial: DeviceDetail }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header */}
-      <div className="shrink-0 border-b-2 border-border bg-surface">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
-          <Link
-            href="/devices"
-            className="text-[12px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
-          >
-            ← Devices
-          </Link>
+      {/* Device header. Two rows on a narrow screen, one on a wide one. */}
+      <header className="shrink-0 border-b border-line px-[clamp(12px,3vw,32px)] pt-4 pb-3">
+        <div className="mx-auto w-full max-w-6xl">
+          <div className="flex items-start gap-3">
+            <Link
+              href="/devices"
+              className="mt-1.5 shrink-0 text-[13px] text-soft transition-colors hover:text-ink"
+            >
+              ← <span className="hidden sm:inline">Devices</span>
+            </Link>
 
-          <div className="flex min-w-0 items-center gap-2">
-            <StatusDot online={device.online} />
-            {renaming ? (
-              <input
-                autoFocus
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onBlur={() => void rename()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void rename();
-                  if (e.key === "Escape") {
-                    setNameDraft(device.name);
-                    setRenaming(false);
-                  }
-                }}
-                className="border-2 border-border bg-background px-2 py-0.5 text-[15px] font-bold outline-none focus:border-accent"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setRenaming(true)}
-                className="truncate text-[16px] font-extrabold tracking-[-0.01em]"
-                title="Click to rename"
-              >
-                {device.name}
-              </button>
-            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <StatusDot online={device.online} />
+                {renaming ? (
+                  <input
+                    autoFocus
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onBlur={() => void rename()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void rename();
+                      if (e.key === "Escape") {
+                        setNameDraft(device.name);
+                        setRenaming(false);
+                      }
+                    }}
+                    className={`${inputClass} max-w-[280px] font-serif text-[20px]`}
+                    aria-label="Device name"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRenaming(true)}
+                    title="Click to rename"
+                    className="truncate font-serif text-[clamp(21px,3.4vw,30px)] leading-tight tracking-[-0.02em] transition-colors hover:text-signal"
+                  >
+                    {device.name}
+                  </button>
+                )}
+              </div>
+
+              <p className="mt-1 truncate font-mono text-[12px] text-faint">
+                {device.hostname} · {device.osVersion} · agent{" "}
+                {device.agentVersion} ·{" "}
+                {device.online
+                  ? "online"
+                  : `last seen ${relativeTime(device.lastSeenAt)}`}
+              </p>
+            </div>
+
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => void revoke()}
+              className="mt-0.5"
+            >
+              Revoke
+            </Button>
           </div>
 
-          <span className="hidden truncate font-mono text-[12px] text-muted sm:inline">
-            {device.osVersion} ·{" "}
-            {device.online
-              ? "online"
-              : `last seen ${relativeTime(device.lastSeenAt)}`}
-          </span>
-
-          <button
-            type="button"
-            onClick={() => void revoke()}
-            className="ml-auto border-2 border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-danger transition-colors hover:border-danger hover:bg-danger/10"
-          >
-            Revoke
-          </button>
+          <div className="mt-4">
+            <Segmented value={tab} options={TABS} onChange={setTab} />
+          </div>
         </div>
-
-        <div className="mx-auto flex max-w-6xl gap-1 px-4">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`-mb-0.5 border-b-4 px-4 py-2.5 text-[13px] font-extrabold uppercase tracking-[0.08em] transition-colors ${
-                tab === t.id
-                  ? "border-accent text-foreground"
-                  : "border-transparent text-muted hover:text-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      </header>
 
       {error && (
-        <p className="shrink-0 border-b-2 border-danger/50 bg-danger/10 px-4 py-2 text-[13px] text-danger">
+        <p className="shrink-0 border-b border-danger/25 bg-danger/[0.07] px-[clamp(12px,3vw,32px)] py-2 text-[13px] text-danger">
           {error}
         </p>
       )}
 
-      {/* Body */}
       <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
         {tab === "chat" && <Chat deviceId={device.id} online={device.online} />}
 
         {tab === "live" && (
-          // Build plan §6: the chat panel stays fully functional beside the
-          // live canvas, so the user can delegate a task and watch it happen.
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-            <div className="flex min-h-0 flex-col border-border lg:border-r-2">
+          /*
+            Build plan §6: the chat panel stays fully functional beside the
+            live canvas, so the user can delegate a task and watch it happen.
+            Below xl there is not enough width for both — the canvas wins, and
+            chat is one tap away on its own tab.
+          */
+          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
+            <div className="flex min-h-0 flex-col border-line xl:border-r">
               <LiveView deviceId={device.id} online={device.online} />
             </div>
-            <div className="hidden min-h-0 flex-col lg:flex">
+            <div className="hidden min-h-0 flex-col xl:flex">
               <Chat deviceId={device.id} online={device.online} compact />
             </div>
           </div>

@@ -327,17 +327,35 @@ export function LiveView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b-2 border-border px-4 py-2.5 text-[12px]">
-        <span className="uppercase tracking-[0.05em] text-muted">
-          {detail}
-          {live && ` · ${stats.fps} fps · ${stats.kbps} kbit/s`}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-[clamp(12px,3vw,24px)] py-2.5">
+        <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-faint">
+          <span
+            className={`size-1.5 shrink-0 rounded-full ${
+              live
+                ? "bg-signal dw-beat"
+                : busy
+                  ? "bg-warn dw-beat"
+                  : phase === "failed"
+                    ? "bg-danger"
+                    : "bg-offline"
+            }`}
+            aria-hidden="true"
+          />
+          <span className="truncate">{detail}</span>
         </span>
-        <div className="ml-auto flex gap-2">
+
+        {live && (
+          <span className="font-mono text-[12px] text-faint tabular-nums">
+            {stats.fps} fps · {stats.kbps} kbit/s
+          </span>
+        )}
+
+        <div className="ml-auto flex shrink-0 gap-2">
           {live && (
             <button
               type="button"
               onClick={() => sendInput({ t: "c", e: "keyframe" })}
-              className="border-2 border-border px-3 py-1.5 font-semibold uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent hover:text-accent"
+              className="rounded-full px-3 py-1.5 text-[13px] text-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
             >
               Refresh
             </button>
@@ -346,7 +364,7 @@ export function LiveView({
             <button
               type="button"
               onClick={() => void stop()}
-              className="border-2 border-border px-4 py-1.5 font-semibold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
+              className="rounded-full border border-line px-4 py-1.5 text-[13px] font-medium text-soft transition-colors hover:border-ink/35 hover:text-ink"
             >
               Cancel
             </button>
@@ -354,7 +372,7 @@ export function LiveView({
             <button
               type="button"
               onClick={() => void stop()}
-              className="border-2 border-border px-4 py-1.5 font-semibold uppercase tracking-[0.08em] transition-colors hover:border-danger hover:text-danger"
+              className="rounded-full border border-line px-4 py-1.5 text-[13px] font-medium text-soft transition-colors hover:border-danger/45 hover:text-danger"
             >
               Stop
             </button>
@@ -363,11 +381,11 @@ export function LiveView({
               type="button"
               onClick={() => void connect()}
               disabled={!online}
-              className="border-2 border-accent bg-accent px-4 py-1.5 font-extrabold uppercase tracking-[0.08em] text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="rounded-full bg-ink px-4 py-1.5 text-[13px] font-medium text-paper transition-opacity hover:opacity-85 disabled:opacity-35"
             >
               {online
                 ? phase === "failed"
-                  ? "Retry live view"
+                  ? "Retry"
                   : "Start live view"
                 : "PC offline"}
             </button>
@@ -376,21 +394,23 @@ export function LiveView({
       </div>
 
       {error && (
-        <div className="shrink-0 border-b-2 border-danger/50 bg-danger/10 px-4 py-2.5 text-[13px] text-danger">
+        <div className="shrink-0 border-b border-danger/25 bg-danger/[0.07] px-[clamp(12px,3vw,24px)] py-2.5 text-[13px] text-danger">
           <p>{error}</p>
           {/* There is no degraded view mode to fall back to, so say plainly
               what still works rather than leaving a dead canvas on screen. */}
-          <p className="mt-1 text-muted">
-            Ask, Act, and Watch are unaffected — they do not use the tunnel.
+          <p className="mt-1 text-soft">
+            Ask, Act and Watch are unaffected — they do not use the tunnel.
           </p>
         </div>
       )}
 
-      <div className="min-h-0 flex-1 bg-[#0c0b0b] p-2">
+      <div className="relative min-h-0 flex-1 bg-[#0b0b0d] p-[clamp(6px,1.5vw,12px)]">
         <canvas
           ref={canvasRef}
           tabIndex={0}
-          className="h-full w-full object-contain outline-none focus:ring-2 focus:ring-accent"
+          className={`h-full w-full rounded-xl object-contain outline-none transition-opacity duration-500 focus-visible:ring-2 focus-visible:ring-signal ${
+            live ? "opacity-100" : "opacity-0"
+          }`}
           onPointerMove={(e) => {
             if (!interactive || !live) return;
             const p = toNormalised(e);
@@ -414,15 +434,72 @@ export function LiveView({
           }}
           onContextMenu={(e) => e.preventDefault()}
         />
+
+        {/* An empty black rectangle reads as a broken player. Until frames
+            arrive, the stage says what it is waiting for. */}
+        {!live && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center">
+            <div className="pointer-events-auto max-w-[34ch]">
+              <EyeGlyph busy={busy} />
+              <p className="mt-5 font-serif text-[clamp(20px,3vw,26px)] leading-tight tracking-[-0.02em] text-[#f2f1ee]">
+                {busy
+                  ? "Opening the tunnel…"
+                  : phase === "failed"
+                    ? "The screen did not come up."
+                    : online
+                      ? "The screen is off until you look."
+                      : "This machine is offline."}
+              </p>
+              <p className="mt-3 text-[14px] leading-relaxed text-[#8f8c97]">
+                {busy
+                  ? "The PC is bringing up its tunnel. This takes a few seconds the first time."
+                  : phase === "failed"
+                    ? "Nothing is left running on the PC. Try again, or use chat — it does not need the tunnel."
+                    : online
+                      ? "Your PC becomes reachable only while this view is open, and stops seconds after you close it."
+                      : "It has to be awake and online. There is no remote wake."}
+              </p>
+              {!busy && online && (
+                <button
+                  type="button"
+                  onClick={() => void connect()}
+                  className="mt-6 rounded-full bg-[#f2f1ee] px-5 py-2.5 text-[14px] font-medium text-[#0e0e11] transition-opacity hover:opacity-85"
+                >
+                  {phase === "failed" ? "Try again" : "Start live view"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {live && interactive && (
-        <p className="shrink-0 border-t-2 border-border px-4 py-2 text-[11px] text-muted">
+        <p className="shrink-0 border-t border-line px-[clamp(12px,3vw,24px)] py-2 text-[11.5px] text-faint">
           Click the screen to capture the keyboard. The agent runs unelevated —
           it cannot see the lock screen or UAC prompts.
         </p>
       )}
     </div>
+  );
+}
+
+function EyeGlyph({ busy }: { busy: boolean }) {
+  return (
+    <svg
+      width="30"
+      height="30"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#62d4b0"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={`mx-auto ${busy ? "dw-beat" : ""}`}
+    >
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </svg>
   );
 }
 

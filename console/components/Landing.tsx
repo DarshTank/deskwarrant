@@ -1,583 +1,388 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
-const SHELL = "mx-auto w-full max-w-[1240px] px-5 sm:px-8 lg:px-16";
+const SHELL = "mx-auto w-full max-w-[1180px] px-[clamp(22px,5vw,56px)]";
+const SECTION = "pt-[clamp(88px,16vh,180px)]";
 
-/** Type ramps are fluid; the clamps live here so the markup stays readable. */
-const H1 = {
-  fontSize: "clamp(44px, 7vw, 96px)",
-  lineHeight: 1.04,
-  letterSpacing: "-0.03em",
-  marginLeft: "-0.058em",
-} as const;
-
-const H2 = {
-  fontSize: "clamp(30px, 3.6vw, 50px)",
-  lineHeight: 1.08,
-  letterSpacing: "-0.02em",
-  marginLeft: "-0.04em",
-} as const;
-
-const STAT = {
-  fontSize: "clamp(32px, 3.4vw, 46px)",
-  lineHeight: 1.05,
-  marginLeft: "-0.045em",
-} as const;
-
-/** Ask / Act / Watch / Control rows: label · headline · detail. */
-const CAPABILITY_ROW = {
-  gridTemplateColumns: "minmax(64px, 130px) minmax(0, 380px) minmax(0, 1fr)",
-} as const;
-
-const SETUP_ROW = {
-  gridTemplateColumns: "minmax(56px, 90px) minmax(0, 1fr) minmax(0, 1.1fr)",
-} as const;
+type Capability = "ask" | "act" | "watch" | "control";
 
 export function Landing({ signedIn }: { signedIn: boolean }) {
   const ctaLabel = signedIn ? "Open the console" : "Get started free";
   const ctaHref = signedIn ? "/devices" : "/signin";
 
+  const [tab, setTab] = useState<Capability>("ask");
+  const typed = useTypewriter();
+  const washRef = usePointerWash();
+  const progressRef = useScrollProgress();
   useReveal();
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden">
-      <CircuitBackground />
+    <div className="relative min-h-dvh overflow-x-hidden text-[17px] leading-[1.6]">
+      {/* A soft radial that follows the pointer. Fixed, behind everything, and
+          inert — on touch it simply stays where it was parked. */}
+      <div
+        ref={washRef}
+        aria-hidden="true"
+        className="pointer-events-none fixed top-0 left-0 z-0 h-[78vmax] w-[78vmax] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-85 blur-[18px] transition-transform duration-[1400ms] ease-[cubic-bezier(.15,.8,.25,1)] will-change-transform"
+        style={{
+          margin: "-39vmax 0 0 -39vmax",
+          background:
+            "radial-gradient(circle, var(--wash) 0%, transparent 62%)",
+          transform: "none",
+        }}
+      />
 
       <div className="relative z-10">
-        <header className="sticky top-0 z-20 border-b-2 border-border bg-background/85 backdrop-blur-md">
-          <div className={`${SHELL} flex items-center gap-6 py-3.5`}>
-            <a href="#top" className="flex items-center gap-3 text-foreground">
-              <Logo size={30} />
-              <span className="text-[18px] font-extrabold tracking-[-0.02em]">
+        {/* ---------------------------------------------------------------- */}
+        <header className="sticky top-0 z-30 border-b border-line2 bg-paper/[0.78] backdrop-blur-xl backdrop-saturate-[1.8]">
+          <div
+            ref={progressRef}
+            aria-hidden="true"
+            className="absolute bottom-[-1px] left-0 h-[1.5px] w-full origin-left scale-x-0 bg-signal will-change-transform"
+          />
+          <div className={`${SHELL} flex items-center gap-6 py-4 sm:gap-8`}>
+            <a href="#top" className="inline-flex shrink-0 items-center gap-3">
+              <Logo size={38} />
+              {/* Below 400px the mark carries the brand alone — the wordmark,
+                  the toggle and the call to action together overflow. */}
+              <span className="hidden font-serif text-[23px] tracking-[-0.01em] leading-none xs:inline">
                 DeskWarrant
               </span>
             </a>
 
-            <nav className="ml-auto hidden items-center gap-6 lg:flex">
-              <NavLink href="#what">What it does</NavLink>
-              <NavLink href="#how">How it works</NavLink>
-              <NavLink href="#architecture">Architecture</NavLink>
-              <NavLink href="#setup">Setup</NavLink>
-              <NavLink href="#faq">FAQ</NavLink>
-            </nav>
-
-            <div className="ml-auto flex items-center gap-3 lg:ml-0">
-              <ThemeToggle />
-              <Link href={ctaHref} className={PRIMARY_BTN}>
+            <nav className="ml-auto flex items-center gap-5 text-[14.5px] text-soft lg:gap-[26px]">
+              <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#capabilities">
+                Capabilities
+              </a>
+              <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#flow">
+                How it works
+              </a>
+              <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#trust">
+                Privacy
+              </a>
+              <a className="hidden whitespace-nowrap hover:text-ink lg:inline" href="#setup">
+                Setup
+              </a>
+              <ThemeToggle className="p-1.5" />
+              <Link
+                href={ctaHref}
+                className="rounded-full bg-ink px-4 py-2 text-[14px] font-medium whitespace-nowrap text-paper transition-opacity hover:opacity-85 sm:px-[17px] sm:py-[9px]"
+              >
                 {ctaLabel}
               </Link>
-            </div>
+            </nav>
           </div>
         </header>
 
         {/* ---------------------------------------------------------------- */}
-        <section id="top" className={`${SHELL} pt-12 sm:pt-20 lg:pt-28`}>
-          <p className="kicker">Windows host agent + web console</p>
-          <h1 className="mt-5 font-extrabold" style={H1}>
-            <span className="block">Your PC, on a leash.</span>
-            <span className="block text-accent">From anywhere.</span>
-          </h1>
-          <p
-            className="mt-8 max-w-[58ch] leading-[1.62]"
-            style={{ fontSize: "clamp(17px, 1.6vw, 21px)" }}
+        <section
+          id="top"
+          className="mx-auto w-full max-w-[940px] px-[clamp(22px,5vw,56px)] pt-[clamp(64px,13vh,150px)] text-center"
+        >
+          {/* The line break is deliberate, so the first line has to fit on one
+              line at every width — hence a floor low enough for a 360px phone
+              rather than a comfortable-looking one that overflows there. */}
+          <h1
+            className="font-serif text-[clamp(30px,9vw,128px)] leading-[0.94] tracking-[-0.035em]"
+            style={{ animation: "dw-in 1s .1s cubic-bezier(.2,.7,.2,1) both" }}
           >
-            DeskWarrant is the remote control your computer never shipped with.
-            Ask it questions in plain language, tell it what to do, let it watch
-            for the things you care about — and take the mouse yourself when you
-            want to. One installer, no domain to own, no ports to forward.
+            Your PC, on a leash.
+            <br />
+            <span className="text-soft italic">From anywhere.</span>
+          </h1>
+
+          <p
+            className="mx-auto mt-[34px] max-w-[47ch] text-[clamp(17px,1.9vw,21px)] leading-[1.55] text-soft"
+            style={{ animation: "dw-in .9s .24s cubic-bezier(.2,.7,.2,1) both" }}
+          >
+            Ask your computer a question in plain language. Tell it what to do.
+            Have it watch for the thing you are waiting on — and take the mouse
+            yourself when you want to.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <Link href={ctaHref} className={PRIMARY_BTN_LG}>
+          <div
+            className="mt-10 flex flex-wrap items-center justify-center gap-3"
+            style={{ animation: "dw-in .9s .36s cubic-bezier(.2,.7,.2,1) both" }}
+          >
+            <Link
+              href={ctaHref}
+              className="rounded-full bg-ink px-[26px] py-3.5 text-[16px] font-medium text-paper transition-[transform,opacity] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:-translate-y-0.5 hover:opacity-90"
+            >
               {ctaLabel}
             </Link>
-            <a href="#how" className={SECONDARY_BTN_LG}>
-              See how it works
+            <a
+              href="#flow"
+              className="px-[22px] py-3.5 text-[16px] text-soft transition-colors hover:text-ink"
+            >
+              See how it works →
             </a>
-            <span className="ml-2 text-[13px] uppercase tracking-[0.06em] text-muted">
-              Free · no card · no admin rights
-            </span>
           </div>
 
-          <dl className="mt-12 grid gap-8 border-y-2 border-border py-10 [grid-template-columns:repeat(auto-fit,minmax(160px,1fr))] sm:mt-16 lg:mt-20">
-            <Stat value="13" label="Typed actions in the catalog" />
-            <Stat value="2s" label="Worst-case dispatch latency" />
-            <Stat value="6" label="Watch rules, ready to arm" />
-            <Stat value="0" label="Screenshots sent to any model" />
-          </dl>
+          {/* A turn, verbatim — the last line types itself. */}
+          <div
+            className="mx-auto mt-[clamp(48px,9vh,96px)] max-w-[620px] text-left font-mono text-[clamp(12.5px,3.2vw,14.5px)] leading-[2.05]"
+            style={{ animation: "dw-in 1s .5s cubic-bezier(.2,.7,.2,1) both" }}
+          >
+            <p className="eyebrow border-b border-line2 pb-3.5 font-sans">
+              A turn, verbatim
+            </p>
+            <p className="mt-3.5">
+              <span className="text-signal">you</span>
+              &nbsp; is the export done yet?
+            </p>
+            <p className="text-faint">
+              agent&nbsp; list_windows · read_window_text
+            </p>
+            <p>
+              <span className="text-soft">reply</span>
+              &nbsp; Premiere is at 84%, about 6 minutes left.
+            </p>
+            <p>
+              <span className="text-signal">you</span>
+              &nbsp;
+              <span aria-live="off">{typed}</span>
+              <span className="dw-caret ml-1 inline-block h-[1.1em] w-2 translate-y-[3px] bg-signal align-baseline" />
+            </p>
+          </div>
         </section>
 
         {/* ---------------------------------------------------------------- */}
-        <section id="what" className={`${SHELL} pt-14 sm:pt-20 lg:pt-24`}>
-          <p className="kicker">Four ways in</p>
-          <h2 className="mt-5 max-w-[22ch] font-extrabold" style={H2}>
-            Ask. Act. Watch. Control.
-          </h2>
-          <p className="mt-6 max-w-[58ch] text-[17px] leading-[1.62]">
-            Three of them need no video session at all — just text over HTTPS,
-            fast enough to use on a phone. The fourth hands you the machine
-            itself.
-          </p>
+        <section id="capabilities" className={`${SHELL} ${SECTION}`}>
+          <div data-reveal className="max-w-[620px]">
+            <p className="eyebrow mb-5">
+              Capabilities
+              <span className="dw-rule mt-4" />
+            </p>
+            <h2 className="font-serif text-[clamp(32px,5vw,62px)] leading-[1.02] tracking-[-0.028em]">
+              Four ways in. Three of them need no screen at all.
+            </h2>
+          </div>
 
-          <div className="mt-12 border-t-2 border-border">
-            <Capability
-              label="Ask"
-              title="Plain questions, real answers"
-              body={
-                <>
-                  &ldquo;Is the download finished?&rdquo; &ldquo;What&rsquo;s
-                  eating my CPU?&rdquo; &ldquo;Did the render window throw an
-                  error?&rdquo; The assistant reads live system data —
-                  processes, window titles, folder listings, CPU, RAM, disk,
-                  battery, uptime — and answers in a sentence, not a dashboard.
-                </>
-              }
-            >
-              <TagRow
-                tags={[
-                  "list_processes",
-                  "list_windows",
-                  "read_window_text",
-                  "list_folder",
-                  "get_system_stats",
-                  "get_download_status",
-                ]}
-              />
-            </Capability>
+          <div
+            data-reveal
+            className="mt-[clamp(36px,7vh,72px)] flex flex-wrap gap-2"
+          >
+            {CAPABILITIES.map((cap) => {
+              const active = tab === cap.id;
+              return (
+                <button
+                  key={cap.id}
+                  type="button"
+                  onClick={() => setTab(cap.id)}
+                  aria-pressed={active}
+                  className={`rounded-full border px-5 py-2.5 text-[15px] transition-all duration-300 ease-[cubic-bezier(.2,.8,.2,1)] active:scale-95 ${
+                    active
+                      ? "border-ink bg-ink text-paper"
+                      : "border-line text-soft hover:text-ink"
+                  }`}
+                >
+                  {cap.label}
+                </button>
+              );
+            })}
+          </div>
 
-            <Capability
-              label="Act"
-              title="Say it, and it happens"
-              body={
-                <>
-                  &ldquo;Close Chrome.&rdquo; &ldquo;Turn the volume down to
-                  20.&rdquo; &ldquo;Open my Downloads folder.&rdquo; Every
-                  action resolves to one entry in a fixed, typed catalog — never
-                  a shell command — and anything destructive stops for your
-                  explicit confirmation, showing exactly what it is about to
-                  run.
-                </>
-              }
-            >
-              <TagRow
-                tags={[
-                  "focus_window",
-                  "minimize_window",
-                  "open_path",
-                  "set_volume",
-                ]}
-              />
-              <TagRow
-                className="mt-2"
-                tone="accent"
-                tags={[
-                  "close_window · confirm",
-                  "kill_process · confirm",
-                  "lock_workstation · confirm",
-                ]}
-              />
-            </Capability>
-
-            <Capability
-              label="Watch"
-              title="Stop checking. Get told."
-              body={
-                <>
-                  Arm a rule and walk away. Your PC evaluates it locally and
-                  pushes a browser notification the moment it fires — so the
-                  render finishing, the disk filling or the export closing
-                  reaches you instead of you going to look.
-                </>
-              }
-            >
-              <div className="mt-4 grid gap-x-7 border-t border-hairline [grid-template-columns:repeat(auto-fit,minmax(210px,1fr))]">
-                {[
-                  "Download finished",
-                  "Program closed",
-                  "Program started",
-                  "CPU pegged",
-                  "Disk space low",
-                  "Battery low",
-                ].map((rule) => (
-                  <p
-                    key={rule}
-                    className="border-b border-hairline py-2.5 text-[15px]"
-                  >
-                    {rule}
+          <div className="mt-10 lg:min-h-[300px]">
+            {CAPABILITIES.filter((c) => c.id === tab).map((cap) => (
+              <div
+                key={cap.id}
+                className="grid items-start gap-[clamp(28px,6vw,80px)] lg:grid-cols-2"
+                style={{
+                  animation: "dw-fade .5s cubic-bezier(.2,.7,.2,1) both",
+                }}
+              >
+                <div>
+                  <h3 className="font-serif text-[clamp(26px,3.4vw,40px)] leading-[1.1] tracking-[-0.02em]">
+                    {cap.title}
+                  </h3>
+                  <p className="mt-5 max-w-[46ch] text-soft">{cap.body}</p>
+                </div>
+                <div className={cap.mono ? "font-mono text-[14px]" : "text-[15.5px]"}>
+                  <p className="eyebrow border-b border-line2 pb-3 font-sans">
+                    {cap.listLabel}
                   </p>
-                ))}
+                  {cap.items.map((item, i) => (
+                    <p
+                      key={item.name}
+                      className={`flex items-baseline justify-between gap-6 border-line2 py-2.5 text-soft ${
+                        i < cap.items.length - 1 ? "border-b" : ""
+                      } ${cap.mono ? "transition-[color,padding] duration-200 hover:pl-1.5 hover:text-ink" : "dw-lift"}`}
+                    >
+                      <span className="min-w-0 break-words">{item.name}</span>
+                      {item.note && (
+                        <span className="shrink-0 text-signal">{item.note}</span>
+                      )}
+                    </p>
+                  ))}
+                </div>
               </div>
-            </Capability>
-
-            <Capability
-              label="Control"
-              title="Take the mouse"
-              body={
-                <>
-                  Open live view and your desktop appears in the browser with
-                  full mouse and keyboard. The chat panel stays live beside it,
-                  so you can hand off a task and watch it happen. The tunnel
-                  starts when you open the view and shuts down seconds after you
-                  close it.
-                </>
-              }
-            >
-              <TagRow
-                tone="neutral"
-                tags={[
-                  "Sharp WebP tiles",
-                  "Mouse + keyboard",
-                  "Chat stays live",
-                  "Tunnel provisioned for you",
-                ]}
-              />
-            </Capability>
+            ))}
           </div>
         </section>
 
         {/* ---------------------------------------------------------------- */}
-        <section id="how" className={`${SHELL} pt-14 sm:pt-20 lg:pt-24`}>
-          <p className="kicker">The workflow</p>
-          <h2 className="mt-5 max-w-[26ch] font-extrabold" style={H2}>
-            Install once. Then it is just a conversation.
-          </h2>
-
-          <div className="mt-11 grid [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
-            <Step
-              n="01"
-              title="Install it"
-              body="Download the installer and run it. It installs for your user only, so there is no administrator prompt at any point, and it registers itself to come back at every logon."
-            />
-            <Step
-              n="02"
-              title="Approve the PC"
-              body="The agent opens the console in your browser and shows a four-character code. Pick the matching one out of four. Nothing is typed, and a wrong pick denies the request outright."
-            />
-            <Step
-              n="03"
-              title="You ask"
-              body="Type in plain language from any device. The assistant picks the tools it needs from the catalog, and the arguments are type-checked before anything is queued."
-            />
-            <Step
-              n="04"
-              title="You get an answer"
-              body="The agent polls every two seconds, and that same poll is the heartbeat behind its online status. A typical turn lands in four to six seconds; armed rules keep firing whether the console is open or not."
-            />
+        <section id="flow" className={`${SHELL} ${SECTION}`}>
+          <div data-reveal className="max-w-[620px]">
+            <p className="eyebrow mb-5">
+              How it works
+              <span className="dw-rule mt-4" />
+            </p>
+            <h2 className="font-serif text-[clamp(32px,5vw,62px)] leading-[1.02] tracking-[-0.028em]">
+              Install once. After that it is just a conversation.
+            </h2>
           </div>
 
-          <div className="mt-10 border-2 border-border p-6 sm:p-8">
-            <p className="kicker">One turn, end to end</p>
-            <div className="mt-4 grid gap-0.5 overflow-x-auto font-mono text-[14px] leading-[1.9]">
-              <p>
-                <span className="font-bold text-accent">you &rsaquo;</span> is
-                the export done yet?
-              </p>
-              <p className="text-muted">
-                agent &rsaquo; list_windows() · read_window_text(hwnd: 132918)
-              </p>
-              <p>
-                <span className="font-bold">reply &rsaquo;</span> Premiere is at
-                84%, about 6 minutes left. Want me to tell you when it finishes?
-              </p>
-              <p>
-                <span className="font-bold text-accent">you &rsaquo;</span> yes,
-                and then close it
-              </p>
-            </div>
+          <div className="mt-[clamp(36px,7vh,76px)]">
+            {STEPS.map((step, i) => (
+              <div
+                key={step.n}
+                data-reveal
+                style={{ transitionDelay: `${i * 0.09}s` }}
+                className={`grid grid-cols-[52px_minmax(0,1fr)] items-baseline gap-x-[clamp(16px,4vw,64px)] gap-y-3 border-t border-line py-7 sm:grid-cols-[72px_minmax(0,300px)_minmax(0,1fr)] ${
+                  i === STEPS.length - 1 ? "border-b" : ""
+                }`}
+              >
+                <span className="font-serif text-[34px] leading-none text-numeral">
+                  {step.n}
+                </span>
+                <h3 className="text-[19px] font-medium">{step.title}</h3>
+                <p className="col-start-2 max-w-[52ch] text-soft sm:col-start-3">
+                  {step.body}
+                </p>
+              </div>
+            ))}
           </div>
+        </section>
+
+        {/* ---------------------------------------------------------------- */}
+        <section id="trust" className={`${SHELL} ${SECTION}`}>
+          <div data-reveal className="max-w-[780px]">
+            <p className="eyebrow mb-5">
+              Privacy
+              <span className="dw-rule mt-4" />
+            </p>
+            <h2 className="font-serif text-[clamp(32px,5.6vw,72px)] leading-[1.0] tracking-[-0.03em]">
+              Your screen is never sent to a model.{" "}
+              <span className="text-soft italic">
+                There isn&rsquo;t one that could read it.
+              </span>
+            </h2>
+            <p className="mt-7 max-w-[52ch] text-[clamp(16px,1.7vw,19px)] text-soft">
+              The assistant receives text and nothing else: process names,
+              window titles, file listings, numbers. Live view frames travel
+              from your PC straight to your browser and are never stored.
+            </p>
+          </div>
+
+          <div
+            data-reveal
+            className="mt-[clamp(40px,8vh,84px)] grid gap-x-[clamp(28px,5vw,64px)] sm:grid-cols-2 xl:grid-cols-4"
+          >
+            {TRUST.map((item) => (
+              <div key={item.title} className="border-t border-line py-6">
+                <h3 className="text-[16px] font-medium">{item.title}</h3>
+                <p className="mt-2 text-[15px] text-soft">{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ---------------------------------------------------------------- */}
+        <section id="setup" className={`${SHELL} ${SECTION}`}>
+          <div data-reveal className="max-w-[620px]">
+            <p className="eyebrow mb-5">
+              Setup
+              <span className="dw-rule mt-4" />
+            </p>
+            <h2 className="font-serif text-[clamp(32px,5vw,62px)] leading-[1.02] tracking-[-0.028em]">
+              Two steps, once.
+            </h2>
+            <p className="mt-6 text-soft">
+              No Python, no terminal, no config file. Ask, Act, Watch and
+              Control all work the moment the machine is approved.
+            </p>
+          </div>
+
+          <div
+            data-reveal
+            className="mt-[clamp(36px,7vh,72px)] grid gap-[clamp(28px,5vw,64px)] sm:grid-cols-2 lg:grid-cols-3"
+          >
+            {SETUP.map((step) => (
+              <div key={step.step}>
+                <p
+                  className={`font-mono text-[12.5px] font-medium tracking-[0.06em] ${
+                    step.dim ? "text-faint" : "text-signal"
+                  }`}
+                >
+                  {step.step}
+                </p>
+                <h3 className="mt-4 mb-2.5 text-[18px] font-medium">
+                  {step.title}
+                </h3>
+                <p className="text-[15.5px] text-soft">{step.body}</p>
+              </div>
+            ))}
+          </div>
+
+          <p
+            data-reveal
+            className="mt-[clamp(32px,6vh,64px)] text-[14.5px] text-faint"
+          >
+            Windows 10 or 11 · no admin rights · every service on a free tier
+          </p>
         </section>
 
         {/* ---------------------------------------------------------------- */}
         <section
-          id="architecture"
-          className={`${SHELL} pt-14 sm:pt-20 lg:pt-24`}
+          className={`${SHELL} ${SECTION} pb-[clamp(72px,12vh,140px)] text-center`}
         >
-          <p className="kicker">Architecture</p>
-          <h2 className="mt-5 max-w-[24ch] font-extrabold" style={H2}>
-            Three moving parts, no mystery.
+          <h2
+            data-reveal
+            className="mx-auto max-w-[18ch] font-serif text-[clamp(36px,7vw,96px)] leading-[0.98] tracking-[-0.033em]"
+          >
+            Stop walking back to your desk.
           </h2>
-          <p className="mt-6 max-w-[58ch] text-[17px] leading-[1.62]">
-            A browser you open anywhere, a console that handles auth and the
-            assistant loop, and a small always-on agent on the Windows machine.
-            Frames from live view go straight from your PC to your browser —
-            they never pass through the console and are never stored.
-          </p>
-
-          <div className="mt-11 grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
-            <Layer
-              n="Layer 01"
-              title="Browser"
-              body="Any device. Chat, watch rules, event feed and the live canvas. Installable as a web app, with push notifications."
-              foot="HTTPS · WebSocket"
-            />
-            <Layer
-              n="Layer 02"
-              title="Console"
-              body="Sign-in, devices, the assistant loop and the job queue. It validates every tool call before dispatch, provisions each PC its own tunnel, and stores the transcript — never a frame."
-              foot="Next.js · Postgres"
-            />
-            <Layer
-              n="Layer 03"
-              title="Host agent"
-              body="A quiet tray app on Windows. Executes the tools, evaluates the rules, captures the screen. Runs unelevated and binds to localhost only."
-              foot="Python · outbound only"
-            />
-          </div>
-
-          <div className="mt-6 grid gap-6 border-2 border-border p-6 sm:p-8">
-            <div>
-              <p className="text-[12px] uppercase tracking-[0.1em] text-muted">
-                Path A — ask, act, watch
-              </p>
-              <FlowRow
-                nodes={["Browser", "Console", "Job queue", "Agent polls, 2s"]}
-              />
-            </div>
-            <hr className="h-0.5 border-0 bg-border" />
-            <div>
-              <p className="text-[12px] uppercase tracking-[0.1em] text-muted">
-                Path B — live view
-              </p>
-              <FlowRow
-                nodes={["Your PC", "Encrypted tunnel", "Browser"]}
-                badge="Console never sees a frame"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ---------------------------------------------------------------- */}
-        <section className={`${SHELL} pt-14 sm:pt-20 lg:pt-24`}>
-          <div className="grid gap-8 border-t-2 border-border pt-11 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))] lg:gap-x-[72px]">
-            <div>
-              <p className="kicker">Built to be trusted</p>
-              <h2
-                className="mt-5 font-extrabold"
-                style={{ ...H2, fontSize: "clamp(28px, 3.2vw, 44px)" }}
-              >
-                Your screen is never sent to an AI model.
-              </h2>
-              <p className="mt-6 text-[17px] leading-[1.62]">
-                The assistant only ever receives text: process names, window
-                titles, file listings, numbers. There is no vision model
-                anywhere in this system, and live view frames are never written
-                to a database.
-              </p>
-            </div>
-            <div className="grid content-start">
-              <Trust
-                title="A catalog, not a shell"
-                body="The model can only name one of 13 typed tools. It cannot emit a command, a script, or a path outside your allowlist."
-              />
-              <Trust
-                title="Folders you choose"
-                body="Downloads, Documents and Desktop by default. The list can only be widened at the machine itself — never remotely, never by the assistant."
-              />
-              <Trust
-                title="Reachable only while watching"
-                body="The tunnel opens when you start live view and closes seconds after you stop. No session, no public endpoint."
-              />
-              <Trust
-                title="Approval is not a credential"
-                body="Approving a pairing request mints nothing. The PC has to come back and prove it holds a 32-byte secret before a device token exists at all — and that token is hashed at rest and revocable in a click."
-                last
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ---------------------------------------------------------------- */}
-        <section id="setup" className={`${SHELL} pt-14 sm:pt-20 lg:pt-24`}>
-          <p className="kicker">Setup</p>
-          <h2 className="mt-5 max-w-[22ch] font-extrabold" style={H2}>
-            Two steps, once.
-          </h2>
-          <p className="mt-6 max-w-[58ch] text-[17px] leading-[1.62]">
-            No Python, no terminal, no config file. Ask, Act, Watch and Control
-            all work the moment the PC is approved.
-          </p>
-
-          <div className="mt-11 border-t-2 border-border">
-            <SetupStep
-              n="STEP 01"
-              title="Sign in and get the installer"
-              body={
-                <>
-                  Google sign-in, then <strong>Add a PC</strong>. Your dashboard
-                  is live before the agent is even installed.
-                </>
-              }
-              terminal={[
-                "deskwarrant › sign in with Google",
-                "› add a PC",
-                "› download for Windows",
-              ]}
-            />
-            <SetupStep
-              n="STEP 02"
-              title="Run it on the PC"
-              body={
-                <>
-                  It installs to your user folder — no administrator prompt —
-                  then opens the console in your browser and shows a
-                  four-character code. Pick the matching one and the machine
-                  turns ONLINE.
-                </>
-              }
-              terminal={[
-                "> DeskWarrantSetup.exe",
-                "installing for this user…",
-                "opening console…",
-                "match code: 7F2A → approved, ONLINE",
-              ]}
-            />
-            <SetupStep
-              n="STEP 03"
-              title="There is no step three"
-              dim
-              body={
-                <>
-                  Live view needs no domain, no <code>cloudflared</code>, no
-                  port forwarding. When the PC pairs, the console provisions its
-                  own tunnel and private subdomain through the Cloudflare API —
-                  and the credential that does it never leaves the server.
-                </>
-              }
-              terminal={[
-                "tunnel:   provisioned automatically",
-                "hostname: pc-7f2a.<console domain>",
-                "service:  http://127.0.0.1:47821",
-              ]}
-            />
-          </div>
-
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <Link href={ctaHref} className={PRIMARY_BTN_LG}>
+          <div
+            data-reveal
+            className="mt-10 flex flex-wrap items-center justify-center gap-3.5"
+          >
+            <Link
+              href={ctaHref}
+              className="rounded-full bg-ink px-7 py-[15px] text-[16px] font-medium text-paper transition-[transform,opacity] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:-translate-y-0.5 hover:opacity-90"
+            >
               {ctaLabel}
             </Link>
-            <span className="text-[15px] text-muted">
-              Windows 10 or 11 · no admin rights · no Python, no terminal
+            <span className="text-[14.5px] text-faint">
+              No card. One machine free, forever.
             </span>
           </div>
         </section>
 
-        {/* ---------------------------------------------------------------- */}
-        <section id="faq" className={`${SHELL} py-14 sm:py-20 lg:py-24`}>
-          <p className="kicker">FAQ</p>
-          <h2 className="mt-5 mb-11 font-extrabold" style={H2}>
-            Straight answers.
-          </h2>
-          <div className="grid border-t-2 border-border [grid-template-columns:repeat(auto-fit,minmax(320px,1fr))] lg:gap-x-[72px]">
-            <Faq q="Does the AI see my screen?">
-              No. It receives text only — names, titles, listings and numbers.
-              There is no vision model in the product at all.
-            </Faq>
-            <Faq q="Can it delete my files?">
-              There is no delete tool. It can list folders and open files inside
-              the folders you allow, and nothing else.
-            </Faq>
-            <Faq q="Do I need a domain or a Cloudflare account?">
-              No. Each PC is given its own tunnel and its own private subdomain
-              when it pairs, provisioned by the console. You never install
-              cloudflared and never log into anything.
-            </Faq>
-            <Faq q="Will Windows warn me when I install it?">
-              Yes. The build is not code-signed, so you get{" "}
-              <em>&ldquo;Windows protected your PC&rdquo;</em> — click{" "}
-              <strong>More info</strong>, then <strong>Run anyway</strong>.
-              SHA-256 checksums are published with every release.
-            </Faq>
-            <Faq q="Does it work on my phone?">
-              Yes — it is a web app, installable to your home screen, with push
-              notifications for watch rules. Live view included.
-            </Faq>
-            <Faq q="Windows only?">
-              The agent is Windows 10 and 11 today. The console runs in any
-              modern browser on any platform.
-            </Faq>
-            <Faq q="What if the PC is asleep?">
-              It needs to be awake and online. The console shows the machine as
-              offline the moment its heartbeat stops, and there is no remote
-              wake.
-            </Faq>
-            <Faq q="Can someone else reach my PC?">
-              A device belongs to exactly one account, and live view needs a
-              short-lived token that your PC re-checks with the console on every
-              connect. Revoke it and access ends instantly.
-            </Faq>
-          </div>
-        </section>
-
-        {/* ---------------------------------------------------------------- */}
-        <section className="bg-accent text-white">
-          <div className={`${SHELL} py-14 sm:py-20 lg:py-24`}>
-            <h2
-              className="max-w-[20ch] font-extrabold"
-              style={{
-                fontSize: "clamp(38px, 6vw, 82px)",
-                lineHeight: 1.05,
-                letterSpacing: "-0.03em",
-                marginLeft: "-0.058em",
-              }}
-            >
-              <span className="block">Stop walking</span>
-              <span className="block">back to your desk.</span>
-            </h2>
-            <p
-              className="mt-8 max-w-[50ch] leading-[1.6] text-white/90"
-              style={{ fontSize: "clamp(17px, 1.6vw, 20px)" }}
-            >
-              Pair your machine and ask it something from the sofa, the train,
-              or the other side of the world.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href={ctaHref}
-                className="inline-flex items-center border-2 border-white bg-white px-5 py-3.5 text-[16px] font-extrabold text-accent"
-              >
-                {ctaLabel}
-              </Link>
-              <a
-                href="#what"
-                className="inline-flex items-center border-2 border-white/70 px-5 py-3.5 text-[16px] font-extrabold text-white transition-colors hover:border-white"
-              >
-                Read the whole story
-              </a>
-            </div>
-          </div>
-        </section>
-
-        <footer className="border-t-2 border-border">
+        <footer className="border-t border-line">
           <div
-            className={`${SHELL} flex flex-wrap items-center gap-x-10 gap-y-5 py-8`}
+            className={`${SHELL} flex flex-wrap items-center gap-x-9 gap-y-4 py-8 text-[14.5px] text-soft`}
           >
-            <span className="flex items-center gap-2.5">
-              <Logo size={22} />
-              <span className="text-[15px] font-extrabold">DeskWarrant</span>
-            </span>
-            <span className="text-[14px] text-muted">
-              Your PC, on a leash. From anywhere.
-            </span>
-            <span className="text-[14px] text-muted">
+            <a href="#top" className="inline-flex items-center gap-3 text-ink">
+              <Logo size={38} />
+              <span className="font-serif text-[23px] tracking-[-0.01em] leading-none">
+                DeskWarrant
+              </span>
+            </a>
+            <span>Your PC, on a leash. From anywhere.</span>
+            <span className="sm:ml-auto">
               Developed by{" "}
               <a
                 href="https://www.darshtank.in"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="border-b border-accent/50 text-accent-soft transition-colors hover:text-accent"
+                className="border-b border-line text-ink transition-colors hover:text-signal"
               >
                 Darsh Tank
               </a>
-            </span>
-            <span className="ml-auto flex flex-wrap gap-5 text-[14px]">
-              <NavLink href="#what">What it does</NavLink>
-              <NavLink href="#architecture">Architecture</NavLink>
-              <NavLink href="#setup">Setup</NavLink>
-              <NavLink href="#faq">FAQ</NavLink>
             </span>
           </div>
         </footer>
@@ -587,370 +392,314 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
 }
 
 /* ========================================================================== */
-/* pieces                                                                     */
+/* content                                                                    */
 /* ========================================================================== */
 
-const PRIMARY_BTN =
-  "inline-flex items-center border-2 border-accent bg-accent px-4 py-2 text-[14px] font-extrabold text-accent-fg transition-opacity hover:opacity-90";
-
-const PRIMARY_BTN_LG =
-  "inline-flex items-center border-2 border-accent bg-accent px-5 py-3.5 text-[16px] font-extrabold text-accent-fg transition-opacity hover:opacity-90";
-
-const SECONDARY_BTN_LG =
-  "inline-flex items-center border-2 border-border px-5 py-3.5 text-[16px] font-extrabold text-foreground transition-colors hover:border-accent hover:text-accent";
-
-function NavLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      className="whitespace-nowrap text-[14px] text-foreground transition-colors hover:text-accent"
-    >
-      {children}
-    </a>
-  );
-}
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div>
-      <dd className="font-extrabold text-accent" style={STAT}>
-        {value}
-      </dd>
-      <dt className="mt-3 text-[13px] uppercase leading-[1.3] tracking-[0.08em] text-muted">
-        {label}
-      </dt>
-    </div>
-  );
-}
-
-function Capability({
-  label,
-  title,
-  body,
-  children,
-}: {
+const CAPABILITIES: {
+  id: Capability;
   label: string;
   title: string;
-  body: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="dw-reveal grid items-start gap-5 border-b-2 border-border py-9 sm:gap-x-8 lg:gap-x-16"
-      style={CAPABILITY_ROW}
-    >
-      <div className="flex items-center gap-3">
-        <span className="mark" />
-        <span className="text-[15px] font-extrabold uppercase tracking-[0.06em]">
-          {label}
-        </span>
-      </div>
-      <h3
-        className="font-bold leading-[1.2] tracking-[-0.015em]"
-        style={{ fontSize: "clamp(21px, 2vw, 27px)" }}
-      >
-        {title}
-      </h3>
-      <div>
-        <p className="text-[16px] leading-[1.6]">{body}</p>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function TagRow({
-  tags,
-  tone = "outline",
-  className = "mt-4",
-}: {
-  tags: string[];
-  tone?: "outline" | "accent" | "neutral";
-  className?: string;
-}) {
-  const toneClass =
-    tone === "accent"
-      ? "border-accent bg-accent-wash text-accent-soft"
-      : tone === "neutral"
-        ? "border-hairline bg-surface text-foreground"
-        : "border-accent text-accent-soft";
-  return (
-    <div className={`flex flex-wrap gap-2 ${className}`}>
-      {tags.map((tag) => (
-        <span
-          key={tag}
-          className={`inline-flex items-center border px-2.5 py-1 font-mono text-[11px] ${toneClass}`}
-        >
-          {tag}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function Step({ n, title, body }: { n: string; title: string; body: string }) {
-  return (
-    <div className="dw-reveal border-t-2 border-border py-7 pr-6 sm:pr-8">
-      <p className="text-[13px] font-extrabold tracking-[0.08em] text-accent">
-        {n}
-      </p>
-      <h3 className="mt-4 text-[20px] font-bold leading-[1.25]">{title}</h3>
-      <p className="mt-3 text-[15px] leading-[1.6]">{body}</p>
-    </div>
-  );
-}
-
-function Layer({
-  n,
-  title,
-  body,
-  foot,
-}: {
-  n: string;
-  title: string;
   body: string;
-  foot: string;
-}) {
-  return (
-    <div className="flex flex-col gap-3.5 border-2 border-border p-6">
-      <p className="text-[12px] uppercase tracking-[0.1em] text-muted">{n}</p>
-      <h3 className="text-[22px] font-extrabold leading-[1.2]">{title}</h3>
-      <p className="text-[15px] leading-[1.6]">{body}</p>
-      <p className="mt-auto text-[13px] uppercase tracking-[0.06em] text-accent-soft">
-        {foot}
-      </p>
-    </div>
-  );
+  listLabel: string;
+  mono: boolean;
+  items: { name: string; note?: string }[];
+}[] = [
+  {
+    id: "ask",
+    label: "Ask",
+    title: "Plain questions, one-sentence answers.",
+    body: "“What's eating my CPU?” “Did the download finish?” “Is there an error on screen?” It reads live system state — processes, window titles, folder listings, CPU, memory, disk, battery — and replies in a sentence instead of a dashboard.",
+    listLabel: "Read-only tools",
+    mono: true,
+    items: [
+      { name: "list_processes" },
+      { name: "list_windows" },
+      { name: "read_window_text" },
+      { name: "list_folder" },
+      { name: "get_system_stats" },
+      { name: "get_download_status" },
+    ],
+  },
+  {
+    id: "act",
+    label: "Act",
+    title: "Say it, and it happens.",
+    body: "“Close Chrome.” “Volume to twenty.” “Open my downloads.” Every action resolves to one entry in a fixed, typed catalogue — never a shell command — and anything with consequences pauses for your confirmation, showing exactly what it is about to run.",
+    listLabel: "Action tools",
+    mono: true,
+    items: [
+      { name: "focus_window" },
+      { name: "minimize_window" },
+      { name: "open_path" },
+      { name: "set_volume" },
+      { name: "close_window", note: "confirm" },
+      { name: "kill_process", note: "confirm" },
+      { name: "lock_workstation", note: "confirm" },
+    ],
+  },
+  {
+    id: "watch",
+    label: "Watch",
+    title: "Stop checking. Get told.",
+    body: "Arm a rule and walk away. Your PC evaluates it locally, every few seconds, and pushes a notification the moment it fires — whether the console is open or not.",
+    listLabel: "Rules you can arm",
+    mono: false,
+    items: [
+      { name: "A download finishes" },
+      { name: "A program closes — or crashes" },
+      { name: "A program starts" },
+      { name: "CPU stays pegged" },
+      { name: "Disk space runs low" },
+      { name: "Battery runs low" },
+    ],
+  },
+  {
+    id: "control",
+    label: "Control",
+    title: "Take the mouse.",
+    body: "Open live view and your desktop appears in the browser with full mouse and keyboard, chat still running beside it. The tunnel opens when you look and closes seconds after you stop.",
+    listLabel: "Live view",
+    mono: false,
+    items: [
+      { name: "Sharp desktop frames, tuned for text" },
+      { name: "Mouse and keyboard, full control" },
+      { name: "Chat stays live alongside the screen" },
+      { name: "Works from a phone on mobile data" },
+    ],
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Install it",
+    body: "One installer, for your user only, so there is no administrator prompt at any point. It registers itself to come back at every logon.",
+  },
+  {
+    n: "02",
+    title: "Approve the machine",
+    body: "The agent opens the console in your browser and shows a four-character code. Pick the matching one out of four. Nothing is typed, and a wrong pick denies the request outright.",
+  },
+  {
+    n: "03",
+    title: "You ask, in your own words",
+    body: "The assistant chooses the tools it needs from the catalogue. Every argument is type-checked before anything is queued for the machine.",
+  },
+  {
+    n: "04",
+    title: "You get an answer",
+    body: "The agent asks for work every couple of seconds, and that same request is its heartbeat. Armed rules keep running in the background and reach you by push wherever you are.",
+  },
+];
+
+const TRUST = [
+  {
+    title: "A catalogue, not a shell",
+    body: "Thirteen typed tools. The model cannot invent a command, a script, or a path.",
+  },
+  {
+    title: "Folders you choose",
+    body: "Downloads, Documents, Desktop by default — widened only at the machine itself.",
+  },
+  {
+    title: "Reachable only while watched",
+    body: "No standing session, no public endpoint. The tunnel lives as long as the view does.",
+  },
+  {
+    title: "One machine, one owner",
+    body: "Approving mints nothing. The PC must return and prove it holds a 32-byte secret before a token exists.",
+  },
+];
+
+const SETUP = [
+  {
+    step: "STEP 01",
+    title: "Sign in and get the installer",
+    body: "Google sign-in, then Add a PC. Your console is live before the agent is installed.",
+    dim: false,
+  },
+  {
+    step: "STEP 02",
+    title: "Run it on the machine",
+    body: "It opens the console in your browser and shows a four-character code. Pick the matching one and the PC turns online.",
+    dim: false,
+  },
+  {
+    step: "STEP 03 · THERE ISN'T ONE",
+    title: "Live view is already on",
+    body: "No domain, no cloudflared, no port forwarding. Each machine gets its own tunnel and private subdomain when it pairs.",
+    dim: true,
+  },
+];
+
+/* ========================================================================== */
+/* behaviour                                                                  */
+/* ========================================================================== */
+
+const QUESTIONS = [
+  "tell me when it's finished",
+  "then close it and lock the PC",
+  "what's using all my memory?",
+];
+
+/** The hero's last line types, holds, erases, and moves to the next question. */
+function useTypewriter() {
+  const [typed, setTyped] = useState("");
+
+  useEffect(() => {
+    // Reduced motion still gets the line, just already finished. Deferred by a
+    // tick like the rest of the app so mount stays a single render pass.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      const settle = setTimeout(() => setTyped(QUESTIONS[0]), 0);
+      return () => clearTimeout(settle);
+    }
+
+    let question = 0;
+    let cursor = 0;
+    let erasing = false;
+    let hold = 0;
+
+    const timer = setInterval(() => {
+      const full = QUESTIONS[question];
+      if (!erasing) {
+        cursor += 1;
+        if (cursor >= full.length) {
+          erasing = true;
+          hold = 16;
+        }
+      } else if (hold > 0) {
+        hold -= 1;
+        return;
+      } else {
+        cursor -= 2;
+        if (cursor <= 0) {
+          cursor = 0;
+          erasing = false;
+          question = (question + 1) % QUESTIONS.length;
+        }
+      }
+      setTyped(full.slice(0, Math.max(0, cursor)));
+    }, 55);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  return typed;
 }
 
-function FlowRow({ nodes, badge }: { nodes: string[]; badge?: string }) {
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-2.5 text-[14px] font-bold uppercase tracking-[0.04em]">
-      {nodes.map((node, i) => (
-        <span key={node} className="flex items-center gap-2.5">
-          <span className="border-2 border-foreground px-3.5 py-2">{node}</span>
-          {i < nodes.length - 1 && (
-            <span className="text-accent" aria-hidden="true">
-              ──▸
-            </span>
-          )}
-        </span>
-      ))}
-      {badge && (
-        <span className="bg-accent px-3.5 py-2 text-accent-fg">{badge}</span>
-      )}
-    </div>
-  );
+/** Parks the wash under the pointer, rAF-throttled. Never runs on touch. */
+function usePointerWash() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    // Start it somewhere deliberate; on a touch device this is where it stays.
+    el.style.transform = `translate3d(${window.innerWidth * 0.5}px, ${window.innerHeight * 0.35}px, 0)`;
+
+    if (!window.matchMedia?.("(pointer: fine)").matches) return;
+
+    let frame = 0;
+    const onMove = (event: PointerEvent) => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        el.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0)`;
+      });
+    };
+
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  return ref;
 }
 
-function Trust({
-  title,
-  body,
-  last = false,
-}: {
-  title: string;
-  body: string;
-  last?: boolean;
-}) {
-  return (
-    <div className={`border-t border-hairline py-4 ${last ? "border-b" : ""}`}>
-      <h3 className="text-[16px] font-bold">{title}</h3>
-      <p className="mt-1.5 text-[15px] leading-[1.55]">{body}</p>
-    </div>
-  );
-}
+/** The hairline under the header, scaled to how far down the page you are. */
+function useScrollProgress() {
+  const ref = useRef<HTMLDivElement>(null);
 
-function SetupStep({
-  n,
-  title,
-  body,
-  terminal,
-  dim = false,
-}: {
-  n: string;
-  title: string;
-  body: React.ReactNode;
-  terminal: string[];
-  dim?: boolean;
-}) {
-  return (
-    <div
-      className="grid items-start gap-4 border-b-2 border-border py-8 sm:gap-x-8 lg:gap-x-14"
-      style={SETUP_ROW}
-    >
-      <p
-        className={`text-[15px] font-extrabold ${dim ? "text-muted" : "text-accent"}`}
-      >
-        {n}
-      </p>
-      <div>
-        <h3 className="text-[20px] font-bold">{title}</h3>
-        <p className="mt-2.5 text-[15px] leading-[1.6]">{body}</p>
-      </div>
-      <pre
-        className={`overflow-x-auto border-l-2 pl-4 font-mono text-[13px] leading-[1.7] whitespace-pre-wrap text-muted ${
-          dim ? "border-hairline" : "border-accent"
-        }`}
-      >
-        {terminal.join("\n")}
-      </pre>
-    </div>
-  );
-}
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
 
-function Faq({ q, children }: { q: string; children: React.ReactNode }) {
-  return (
-    <div className="border-b-2 border-border py-7">
-      <h3 className="text-[18px] font-bold">{q}</h3>
-      <p className="mt-2.5 text-[15px] leading-[1.6]">{children}</p>
-    </div>
-  );
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const scrollable =
+        document.documentElement.scrollHeight - window.innerHeight;
+      const progress =
+        scrollable > 0 ? Math.min(1, window.scrollY / scrollable) : 0;
+      el.style.transform = `scaleX(${progress})`;
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(update);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    update();
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  return ref;
 }
 
 /**
- * The background: five horizontal wires with a pulse travelling along each,
- * two verticals, and nodes where they cross. Fixed, behind everything, and
- * inert — it is scenery, and `prefers-reduced-motion` stops it dead.
- */
-function CircuitBackground() {
-  return (
-    <div
-      className="dw-bg pointer-events-none fixed inset-0 z-0 overflow-hidden"
-      aria-hidden="true"
-    >
-      {WIRES.map((wire) => (
-        <div
-          key={wire.top}
-          className="absolute inset-x-0 h-px"
-          style={{
-            top: wire.top,
-            background: "color-mix(in srgb, var(--foreground) 4%, transparent)",
-          }}
-        >
-          <span
-            className="absolute left-0"
-            style={{
-              top: -3,
-              width: wire.w,
-              height: 4,
-              background: wire.accent ? "var(--accent)" : "var(--foreground)",
-              opacity: wire.accent ? 0.16 : 0.08,
-              animation: `${wire.back ? "dw-wire-back" : "dw-wire"} ${wire.dur}s linear infinite ${wire.delay}s`,
-            }}
-          />
-        </div>
-      ))}
-
-      <div
-        className="absolute inset-y-0 w-px"
-        style={{
-          left: "18%",
-          background: "color-mix(in srgb, var(--foreground) 3%, transparent)",
-        }}
-      />
-      <div
-        className="absolute inset-y-0 w-px"
-        style={{
-          left: "72%",
-          background: "color-mix(in srgb, var(--foreground) 3%, transparent)",
-        }}
-      />
-
-      {NODES.map((node) => (
-        <div
-          key={`${node.top}-${node.left}`}
-          className="absolute"
-          style={{
-            top: node.top,
-            left: node.left,
-            width: node.size,
-            height: node.size,
-            margin: `${-node.size / 2}px 0 0 ${-node.size / 2}px`,
-            background: node.accent ? "var(--accent)" : "var(--foreground)",
-            opacity: node.accent ? 1 : 0.12,
-            animation: `dw-node ${node.dur}s ease-in-out infinite ${node.delay}s`,
-          }}
-        />
-      ))}
-
-      <div
-        className="absolute"
-        style={{
-          top: "29%",
-          left: "72%",
-          width: 8,
-          height: 16,
-          margin: "-8px 0 0 -4px",
-          background: "var(--accent)",
-          opacity: 0.1,
-          animation: "dw-blink 2.2s steps(1) infinite",
-        }}
-      />
-    </div>
-  );
-}
-
-const WIRES = [
-  { top: "13%", w: 34, dur: 13, delay: 0, accent: true, back: false },
-  { top: "29%", w: 18, dur: 19, delay: 0, accent: false, back: true },
-  { top: "46%", w: 48, dur: 21, delay: 2, accent: true, back: false },
-  { top: "62%", w: 22, dur: 27, delay: 4, accent: false, back: true },
-  { top: "81%", w: 28, dur: 17, delay: 6, accent: true, back: false },
-];
-
-const NODES = [
-  { top: "13%", left: "18%", size: 6, dur: 6, delay: 0, accent: true },
-  { top: "46%", left: "72%", size: 7, dur: 9, delay: 1.5, accent: true },
-  { top: "81%", left: "18%", size: 5, dur: 11, delay: 3, accent: false },
-];
-
-/**
- * Fades sections in as they arrive. Anything already above the fold on load is
- * left painted — animating it would be a flash of missing content, not a
- * reveal.
+ * Reveals sections as they arrive. Rescanned on an interval because the
+ * capability panel swaps its children when you change tab, and anything
+ * already scrolled past is shown outright rather than animated back in.
  */
 function useReveal() {
   useEffect(() => {
-    const nodes = Array.from(
-      document.querySelectorAll<HTMLElement>(".dw-reveal"),
-    );
-    if (nodes.length === 0) return;
-
-    if (
-      typeof IntersectionObserver !== "function" ||
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    ) {
-      nodes.forEach((n) => {
-        n.dataset.shown = "true";
-      });
+    if (typeof IntersectionObserver !== "function") {
+      document
+        .querySelectorAll("[data-reveal]")
+        .forEach((el) => el.classList.add("dw-in"));
       return;
     }
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          (entry.target as HTMLElement).dataset.shown = "true";
+          if (!entry.isIntersecting && entry.boundingClientRect.bottom >= 0) {
+            return;
+          }
+          entry.target.classList.add("dw-in");
           observer.unobserve(entry.target);
         });
       },
-      { rootMargin: "0px 0px -8% 0px", threshold: 0.08 },
+      { rootMargin: "0px 0px -12% 0px", threshold: 0.05 },
     );
 
-    nodes.forEach((n) => {
-      if (n.getBoundingClientRect().top < window.innerHeight * 0.9) {
-        n.dataset.shown = "true";
-        return;
-      }
-      observer.observe(n);
-    });
+    const scan = () => {
+      document
+        .querySelectorAll("[data-reveal]:not(.dw-in)")
+        .forEach((el) => {
+          if (el.getBoundingClientRect().bottom < 0) {
+            el.classList.add("dw-in");
+            return;
+          }
+          observer.observe(el);
+        });
+    };
 
-    return () => observer.disconnect();
+    scan();
+    const timer = setInterval(scan, 900);
+
+    return () => {
+      observer.disconnect();
+      clearInterval(timer);
+    };
   }, []);
 }

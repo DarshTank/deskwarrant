@@ -15,6 +15,15 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return output;
 }
 
+const COPY: Record<State, string> = {
+  unsupported: "This browser does not support web push.",
+  unconfigured: "VAPID keys are not configured on the server.",
+  denied: "Blocked in browser settings. Re-allow notifications for this site.",
+  on: "Watch events reach you with the tab closed.",
+  off: "Turn on to get alerted the moment a rule fires.",
+  busy: "Checking…",
+};
+
 export function PushToggle() {
   const [state, setState] = useState<State>("busy");
   const [error, setError] = useState<string | null>(null);
@@ -117,34 +126,36 @@ export function PushToggle() {
     }
   }
 
+  const actionable = state === "on" || state === "off";
+
   return (
-    <div className="border-2 border-border bg-surface p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[16px] font-bold">Push notifications</p>
-          <p className="mt-1 text-[13px] leading-[1.5] text-muted">
-            {state === "unsupported" &&
-              "This browser does not support web push."}
-            {state === "unconfigured" &&
-              "VAPID keys are not configured on the server."}
-            {state === "denied" &&
-              "Blocked in browser settings. Re-allow notifications for this site."}
-            {state === "on" && "Watch events will reach you with the tab closed."}
-            {state === "off" && "Turn on to get alerts when a rule fires."}
-            {state === "busy" && "Checking…"}
-          </p>
-        </div>
-        {(state === "on" || state === "off") && (
-          <button
-            type="button"
-            onClick={() => void (state === "on" ? disable() : enable())}
-            className="shrink-0 border-2 border-border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
-          >
-            {state === "on" ? "Turn off" : "Turn on"}
-          </button>
-        )}
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-line bg-raised px-5 py-4">
+      <span
+        className={`size-1.5 shrink-0 rounded-full ${
+          state === "on" ? "bg-signal dw-beat" : "bg-offline"
+        }`}
+        aria-hidden="true"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-medium">Push notifications</p>
+        <p className="mt-0.5 text-[13.5px] text-soft">{COPY[state]}</p>
       </div>
-      {error && <p className="mt-3 text-[13px] text-danger">{error}</p>}
+      {actionable && (
+        <button
+          type="button"
+          onClick={() => void (state === "on" ? disable() : enable())}
+          className={`shrink-0 rounded-full px-5 py-2 text-[13px] font-medium transition-colors ${
+            state === "on"
+              ? "border border-line text-soft hover:border-ink/35 hover:text-ink"
+              : "bg-ink text-paper hover:opacity-85"
+          }`}
+        >
+          {state === "on" ? "Turn off" : "Turn on"}
+        </button>
+      )}
+      {error && (
+        <p className="w-full text-[13px] text-danger">{error}</p>
+      )}
     </div>
   );
 }

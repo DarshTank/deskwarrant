@@ -10,9 +10,15 @@ export function GET() {
     display: "standalone",
     // Matches the theme's dark ground, which is what an installed PWA splash
     // should paint. A manifest takes one colour, so it picks the dark one.
-    background_color: "#161514",
-    theme_color: "#161514",
+    background_color: "#0e0e11",
+    theme_color: "#0e0e11",
     icons: [
+      {
+        src: "/icon.svg",
+        sizes: "any",
+        type: "image/svg+xml",
+        purpose: "any maskable",
+      },
       {
         src: "/icon-192.png",
         sizes: "192x192",

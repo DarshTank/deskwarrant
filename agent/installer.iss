@@ -15,6 +15,7 @@
 #define AppName "DeskWarrant"
 #define AppExe "DeskWarrantAgent.exe"
 #define TaskName "DeskWarrant Agent"
+#define AppIcon "deskwarrant.ico"
 
 [Setup]
 ; Never change AppId -- it is what lets an upgrade replace an existing install
@@ -44,15 +45,45 @@ CloseApplications=yes
 RestartApplications=no
 UninstallDisplayName={#AppName}
 
+; ---- Branding ----------------------------------------------------------
+; Sources and a regeneration script live in branding/. Inno reads BMP and ICO
+; only, so the rasterised files are committed next to the SVGs they came from.
+
+; The icon on Setup.exe itself. This is the one users see most: in the browser's
+; download bar, in Explorer, and on the SmartScreen dialog that an unsigned
+; build always shows. A generic icon there is what makes an unsigned installer
+; look like something you should not run.
+SetupIconFile=branding\{#AppIcon}
+
+; Shown in the header on every page. Sizes are listed explicitly rather than
+; matched with a wildcard so it is obvious which scalings ship; Inno picks the
+; nearest to the display's DPI.
+WizardSmallImageFile=branding\WizardSmall-55x55.bmp,branding\WizardSmall-82x82.bmp,branding\WizardSmall-110x110.bmp
+
+; The tall left banner. With WizardStyle=modern, Inno disables the Welcome page
+; by default and this appears on the Finished page -- which is where it belongs
+; anyway. Turning the Welcome page back on to show it earlier would buy branding
+; at the cost of an extra click, and this installer is deliberately short.
+WizardImageFile=branding\WizardLarge-164x314.bmp,branding\WizardLarge-246x471.bmp,branding\WizardLarge-328x628.bmp
+
+; Add/Remove Programs. Points at the installed .ico rather than the agent exe,
+; which carries no icon resource of its own yet.
+UninstallDisplayIcon={app}\{#AppIcon}
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+; Installed, not just compiled in: the shortcuts and the Add/Remove Programs
+; entry reference it by path at runtime.
+Source: "branding\{#AppIcon}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
-Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"; \
+  IconFilename: "{app}\{#AppIcon}"
+Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"; \
+  IconFilename: "{app}\{#AppIcon}"
 
 [Run]
 ; Start at logon, unelevated, in the interactive session. A Scheduled Task

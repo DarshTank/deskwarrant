@@ -7,12 +7,17 @@ type Theme = "light" | "dark";
 const STORAGE_KEY = "deskwarrant-theme";
 
 /**
- * Square, bordered, uppercase — the same button shape the rest of the system
- * uses. It reads the resolved theme on mount rather than assuming one: the
- * bootstrap script in the root layout may already have stamped `data-theme`,
- * and where it has not, the system preference is the truth.
+ * Reads the resolved theme on mount rather than assuming one: the bootstrap
+ * script in the root layout may already have stamped `data-theme`, and where
+ * it has not, the system preference is the truth.
  */
-export function ThemeToggle({ className = "" }: { className?: string }) {
+export function ThemeToggle({
+  className = "",
+  label = false,
+}: {
+  className?: string;
+  label?: boolean;
+}) {
   const [theme, setTheme] = useState<Theme | null>(null);
 
   // Deferred by a tick, matching the rest of the app: reading the DOM and
@@ -44,18 +49,58 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     }
   }
 
+  const isDark = theme === "dark";
+
   return (
     <button
       type="button"
       onClick={toggle}
-      aria-label="Switch colour theme"
-      className={`inline-flex items-center gap-2 border-2 border-border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground transition-colors hover:border-accent hover:text-accent ${className}`}
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      className={`inline-flex items-center gap-2 text-soft transition-colors hover:text-ink ${className}`}
     >
-      <span className="mark" aria-hidden="true" />
-      {/* Rendered blank until mounted so server and client markup agree. */}
-      <span className="min-w-[34px] text-left">
-        {theme === null ? "" : theme === "dark" ? "Light" : "Dark"}
+      {/* Both glyphs render at the same size, so the button never reflows
+          between the unresolved state and either theme. */}
+      <span className="grid size-[17px] place-items-center">
+        {theme === null ? null : isDark ? <SunGlyph /> : <MoonGlyph />}
       </span>
+      {label && (
+        <span className="text-[14px]">
+          {theme === null ? "" : isDark ? "Light" : "Dark"}
+        </span>
+      )}
     </button>
+  );
+}
+
+function SunGlyph() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
+    </svg>
+  );
+}
+
+function MoonGlyph() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden="true"
+    >
+      <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5z" />
+    </svg>
   );
 }

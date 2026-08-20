@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500" fill="none">
+  <!--
+    The same seal with everything that turns to mush below ~48px removed: the
+    engraved legend, the dashed rings, the telemetry ellipse, the sparkline and
+    the crosshairs. What is left is the silhouette that actually identifies the
+    product at 16px — a dark disc, one green arc, the beacon and a screen.
+
+    Strokes are heavier than the full seal's, because a 3px line on a 500px
+    canvas disappears entirely once it is scaled to 16.
+  -->
+  <defs>
+    <linearGradient id="dw-mark-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1C1C24" />
+      <stop offset="50%" stop-color="#121217" />
+      <stop offset="100%" stop-color="#08080B" />
+    </linearGradient>
+
+    <linearGradient id="dw-mark-signal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A7F3D0" />
+      <stop offset="35%" stop-color="#62D4B0" />
+      <stop offset="100%" stop-color="#1D6B57" />
+    </linearGradient>
+  </defs>
+
+  <circle cx="250" cy="250" r="246" fill="url(#dw-mark-bg)" />
+  <circle cx="250" cy="250" r="240" stroke="#62D4B0" stroke-width="10" stroke-opacity="0.85" />
+
+  <!-- The leash, thickened so it survives the downscale -->
+  <path
+    d="M135 145 C 135 375, 195 395, 305 395 C 395 395, 425 345, 425 285 C 425 210, 360 190, 305 190"
+    stroke="url(#dw-mark-signal)"
+    stroke-width="26"
+    stroke-linecap="round"
+    fill="none"
+  />
+
+  <!-- Screen -->
+  <g transform="translate(10, -8)">
+    <rect
+      x="195"
+      y="172"
+      width="200"
+      height="160"
+      rx="20"
+      fill="#15161E"
+      stroke="#f2f1ee"
+      stroke-width="16"
+    />
+    <path
+      d="M243 224 L268 252 L243 280"
+      stroke="#62D4B0"
+      stroke-width="20"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      fill="none"
+    />
+    <rect x="292" y="268" width="60" height="16" rx="8" fill="#62D4B0" />
+  </g>
+
+  <!-- Beacon -->
+  <circle cx="135" cy="145" r="76" fill="#0E0E11" />
+  <circle cx="135" cy="145" r="66" fill="url(#dw-mark-signal)" />
+  <circle cx="135" cy="145" r="26" fill="#FFFFFF" />
+</svg>

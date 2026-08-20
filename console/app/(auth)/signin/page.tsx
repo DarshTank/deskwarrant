@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/lib/auth";
 import { Logo } from "@/components/Logo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata = { title: "Sign in · DeskWarrant" };
 
@@ -29,38 +30,85 @@ export default async function SignInPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const next = safeNext((await searchParams).next);
+  const pairing = next !== "/devices";
 
   const session = await auth();
   if (session?.user) redirect(next);
 
   return (
-    <main className="grid min-h-dvh place-items-center px-5 py-16">
-      <div className="w-full max-w-md">
-        <Link href="/" className="mb-10 flex items-center gap-3">
-          <Logo size={30} />
-          <span className="text-[18px] font-extrabold tracking-[-0.02em]">
-            DeskWarrant
-          </span>
-        </Link>
-
-        <p className="kicker">Sign in</p>
-        <h1
-          className="mt-4 font-extrabold"
+    /*
+      Two panels on a wide screen, one column on a narrow one. The left panel
+      is the only place in the product that repeats the landing page's voice —
+      it is still the front door, and dropping someone straight into a bare
+      form loses the thread between the page they clicked from and this one.
+    */
+    <main className="grid min-h-dvh content-start lg:grid-cols-[1.05fr_1fr] lg:content-stretch">
+      <section className="relative flex flex-col gap-10 overflow-hidden border-line px-[clamp(24px,6vw,72px)] py-8 lg:justify-between lg:gap-0 lg:border-r lg:py-12">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-[30vmax] -left-[20vmax] h-[70vmax] w-[70vmax] rounded-full blur-[18px]"
           style={{
-            fontSize: "clamp(32px, 5vw, 44px)",
-            lineHeight: 1.06,
-            letterSpacing: "-0.03em",
-            marginLeft: "-0.04em",
+            background:
+              "radial-gradient(circle, var(--wash) 0%, transparent 62%)",
           }}
-        >
-          Your PC, on a leash.
-        </h1>
-        <p className="mt-4 text-[16px] leading-[1.6] text-muted">
-          Ask, act, watch and control your Windows PC from any browser.
-        </p>
+        />
 
-        <div className="mt-8 border-2 border-border bg-surface p-6">
+        <div className="relative flex items-center justify-between gap-4">
+          <Link href="/" className="inline-flex items-center gap-3 text-ink">
+            <Logo size={38} />
+            <span className="font-serif text-[23px] tracking-[-0.01em] leading-none">
+              DeskWarrant
+            </span>
+          </Link>
+          <ThemeToggle className="p-1.5 lg:hidden" />
+        </div>
+
+        <div className="relative lg:py-0">
+          <p className="eyebrow mb-5">
+            {pairing ? "One machine is asking to join" : "Sign in"}
+          </p>
+          <h1 className="max-w-[16ch] font-serif text-[clamp(38px,6vw,68px)] leading-[0.98] tracking-[-0.032em]">
+            Your PC, on a leash.{" "}
+            <span className="text-soft italic">From anywhere.</span>
+          </h1>
+          <p className="mt-7 max-w-[42ch] text-[clamp(16px,1.6vw,18px)] text-soft">
+            {pairing
+              ? "Sign in to see the request. You will be shown four codes and asked to pick the one your PC is displaying."
+              : "Ask it a question, tell it what to do, have it watch for what you are waiting on — and take the mouse when you want to."}
+          </p>
+        </div>
+
+        <ul className="relative hidden gap-x-10 gap-y-4 text-[14.5px] text-soft sm:grid sm:grid-cols-2 lg:max-w-[46ch]">
+          <li className="border-t border-line pt-3">
+            No screenshot ever reaches a model
+          </li>
+          <li className="border-t border-line pt-3">
+            Thirteen typed tools, never a shell
+          </li>
+          <li className="border-t border-line pt-3">
+            One machine, one owner, revocable
+          </li>
+          <li className="border-t border-line pt-3">
+            Free tier, no card, no admin rights
+          </li>
+        </ul>
+      </section>
+
+      <section className="flex items-center justify-center px-[clamp(24px,6vw,72px)] pt-2 pb-14 lg:py-12">
+        <div className="w-full max-w-[380px]">
+          <div className="mb-8 hidden justify-end lg:flex">
+            <ThemeToggle label className="text-[14px]" />
+          </div>
+
+          <h2 className="font-serif text-[30px] leading-tight tracking-[-0.02em]">
+            Continue
+          </h2>
+          <p className="mt-2 text-[15px] text-soft">
+            One account holds your machines. There is no sharing model.
+          </p>
+
           <form
+            className="mt-8"
             action={async () => {
               "use server";
               await signIn("google", { redirectTo: next });
@@ -68,25 +116,27 @@ export default async function SignInPage({
           >
             <button
               type="submit"
-              className="inline-flex w-full items-center justify-center gap-3 border-2 border-accent bg-accent px-4 py-3 text-[15px] font-extrabold text-accent-fg transition-opacity hover:opacity-90"
+              className="flex w-full items-center justify-center gap-3 rounded-full bg-ink px-6 py-3.5 text-[15px] font-medium text-paper transition-[transform,opacity] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] hover:-translate-y-0.5 hover:opacity-90"
             >
               <GoogleMark />
               Continue with Google
             </button>
           </form>
-          <p className="mt-5 border-t border-hairline pt-4 text-[13px] leading-[1.55] text-muted">
-            A device belongs to exactly one account. There is no sharing model,
-            and that check is the whole authorization layer.
-          </p>
-        </div>
 
-        <Link
-          href="/"
-          className="mt-6 inline-block text-[13px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
-        >
-          ← Back to the overview
-        </Link>
-      </div>
+          <p className="mt-6 border-t border-line pt-5 text-[13.5px] leading-relaxed text-faint">
+            Every device-scoped request checks that the machine belongs to you.
+            That check is the entire authorization layer — which is why there is
+            nothing to configure here.
+          </p>
+
+          <Link
+            href="/"
+            className="mt-8 inline-block text-[14px] text-soft transition-colors hover:text-ink"
+          >
+            ← Back to the overview
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }

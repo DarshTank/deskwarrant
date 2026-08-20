@@ -260,14 +260,20 @@ export function Chat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b-2 border-border px-4 py-2.5">
-        <span className="text-[12px] uppercase tracking-[0.06em] text-muted">
-          {online ? "Ask about this PC" : "PC is offline — answers unavailable"}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-[clamp(12px,3vw,24px)] py-2.5">
+        <span className="flex min-w-0 items-center gap-2 font-mono text-[12px] text-faint">
+          <span
+            className={`size-1.5 shrink-0 rounded-full ${online ? "bg-signal dw-beat" : "bg-offline"}`}
+            aria-hidden="true"
+          />
+          <span className="truncate">
+            {online ? "ready" : "offline — answers unavailable"}
+          </span>
         </span>
         <button
           type="button"
           onClick={() => void newConversation()}
-          className="text-[12px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-accent"
+          className="shrink-0 rounded-full px-3 py-1 text-[13px] text-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
         >
           New chat
         </button>
@@ -275,9 +281,9 @@ export function Chat({
 
       <div
         ref={scrollRef}
-        className="thin-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
+        className="thin-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-[clamp(12px,3vw,24px)] py-5"
       >
-        {!loaded && <p className="text-[15px] text-muted">Loading…</p>}
+        {!loaded && <p className="text-[15px] text-faint">Loading…</p>}
 
         {loaded && visible.length === 0 && (
           <EmptyChat compact={compact} onPick={(q) => setInput(q)} />
@@ -288,22 +294,23 @@ export function Chat({
         ))}
 
         {runningTools.length > 0 && (
-          <div className="border-2 border-border bg-surface px-3 py-2">
+          <div className="rounded-2xl border border-line bg-raised px-4 py-3">
             {runningTools.map((tool) => (
               <div
                 key={tool.jobId}
-                className="flex items-center gap-2 py-0.5 text-xs"
+                className="flex items-center gap-2.5 py-1 font-mono text-[12.5px]"
               >
                 <ToolStatusIcon status={tool.status} />
-                <span className="font-mono text-muted">{tool.summary}</span>
+                <span className="min-w-0 truncate text-soft">{tool.summary}</span>
               </div>
             ))}
           </div>
         )}
 
         {status && (
-          <p className="text-xs text-muted">
-            <span className="inline-block animate-pulse">{status}…</span>
+          <p className="flex items-center gap-2 font-mono text-[12.5px] text-faint">
+            <span className="dw-beat size-1.5 rounded-full bg-signal" />
+            {status}…
           </p>
         )}
 
@@ -316,14 +323,14 @@ export function Chat({
         ))}
 
         {error && (
-          <p className="border-2 border-danger/50 bg-danger/10 px-3 py-2 text-[14px] text-danger">
+          <p className="rounded-2xl border border-danger/25 bg-danger/[0.07] px-4 py-3 text-[14px] text-danger">
             {error}
           </p>
         )}
       </div>
 
-      <div className="shrink-0 border-t-2 border-border p-3">
-        <div className="flex items-end gap-2">
+      <div className="shrink-0 border-t border-line p-[clamp(10px,2.5vw,16px)]">
+        <div className="flex items-end gap-2 rounded-3xl border border-line bg-raised py-1.5 pr-1.5 pl-4 transition-colors focus-within:border-signal">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -337,17 +344,38 @@ export function Chat({
             placeholder={
               online ? "Is my download finished?" : "This PC is offline"
             }
-            className="max-h-32 min-h-[42px] flex-1 resize-none border-2 border-border bg-surface px-3 py-2.5 text-[15px] outline-none placeholder:text-muted focus:border-accent"
+            aria-label="Message"
+            className="thin-scroll max-h-32 min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[15px] text-ink outline-none placeholder:text-faint"
           />
           <button
             type="button"
             onClick={() => void send()}
             disabled={streaming || input.trim() === ""}
-            className="border-2 border-accent bg-accent px-5 py-2.5 text-[14px] font-extrabold uppercase tracking-[0.06em] text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+            aria-label="Send"
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-paper transition-opacity hover:opacity-85 disabled:opacity-30"
           >
-            {streaming ? "…" : "Send"}
+            {streaming ? (
+              <span className="dw-beat size-2 rounded-full bg-paper" />
+            ) : (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
+            )}
           </button>
         </div>
+        <p className="mt-2 px-2 text-[11.5px] text-faint">
+          Answers come from live system data — never from a screenshot.
+        </p>
       </div>
     </div>
   );
@@ -368,18 +396,18 @@ function EmptyChat({
   ];
   return (
     <div className="py-6">
-      <p className="text-[15px] leading-[1.6] text-muted">
-        Ask anything about this PC. Answers come from live system data — never
-        from a screenshot.
-      </p>
+      <h2 className="max-w-[22ch] font-serif text-[clamp(24px,3.4vw,32px)] leading-[1.08] tracking-[-0.02em]">
+        Ask this machine anything.{" "}
+        <span className="text-soft italic">In your own words.</span>
+      </h2>
       {!compact && (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-6 flex flex-wrap gap-2">
           {suggestions.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => onPick(s)}
-              className="border-2 border-border px-3 py-1.5 text-[13px] text-muted transition-colors hover:border-accent hover:text-accent"
+              className="rounded-full border border-line px-3.5 py-1.5 text-[13.5px] text-soft transition-colors hover:border-signal hover:text-ink"
             >
               {s}
             </button>
@@ -394,7 +422,7 @@ function MessageBubble({ message }: { message: UiMessage }) {
   if (message.role === "USER") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] bg-accent px-4 py-2.5 text-[15px] leading-[1.5] text-accent-fg">
+        <div className="max-w-[85%] rounded-3xl rounded-br-lg bg-ink px-4 py-2.5 text-[15px] leading-[1.5] text-paper">
           {message.content}
         </div>
       </div>
@@ -402,16 +430,21 @@ function MessageBubble({ message }: { message: UiMessage }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       {message.toolCalls && message.toolCalls.length > 0 && (
-        <details className="border-l-2 border-hairline bg-surface px-3 py-2">
-          <summary className="cursor-pointer text-[12px] uppercase tracking-[0.06em] text-muted">
-            Ran {message.toolCalls.length}{" "}
+        <details className="group rounded-2xl border border-line2 px-4 py-2.5">
+          <summary className="cursor-pointer font-mono text-[12px] text-faint marker:content-[''] hover:text-soft">
+            <span className="group-open:hidden">▸ </span>
+            <span className="hidden group-open:inline">▾ </span>
+            ran {message.toolCalls.length}{" "}
             {message.toolCalls.length === 1 ? "tool" : "tools"}
           </summary>
-          <ul className="mt-2 space-y-1">
+          <ul className="mt-2.5 space-y-1.5">
             {message.toolCalls.map((call) => (
-              <li key={call.id} className="font-mono text-[11px] text-muted">
+              <li
+                key={call.id}
+                className="font-mono text-[11.5px] break-all text-soft"
+              >
                 {call.name}({JSON.stringify(call.args)})
                 {call.error && (
                   <span className="ml-1 text-danger">— {call.error}</span>
@@ -422,7 +455,7 @@ function MessageBubble({ message }: { message: UiMessage }) {
         </details>
       )}
       {message.content.trim() !== "" && (
-        <p className="max-w-[95%] text-[15px] leading-[1.62] whitespace-pre-wrap">
+        <p className="max-w-[68ch] text-[15.5px] leading-[1.62] whitespace-pre-wrap">
           {message.content}
         </p>
       )}
@@ -438,25 +471,26 @@ function ConfirmCard({
   onDecide: (approve: boolean) => void;
 }) {
   return (
-    <div className="border-2 border-warn/60 bg-warn/10 p-4">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-warn">
-        Confirm this action
-      </p>
-      <p className="mt-2.5 font-mono text-[13px] text-foreground">
+    <div className="rounded-2xl border border-warn/35 bg-warn/[0.07] p-5">
+      <p className="eyebrow text-warn">Needs your say-so</p>
+      <p className="mt-3 font-mono text-[13px] break-all text-ink">
         {confirm.toolName}({JSON.stringify(confirm.args)})
       </p>
-      <div className="mt-3 flex gap-2">
+      <p className="mt-2 text-[14px] text-soft">
+        This one has consequences, so nothing runs until you say.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => onDecide(true)}
-          className="border-2 border-danger bg-danger px-4 py-2 text-[12px] font-extrabold uppercase tracking-[0.08em] text-white transition-opacity hover:opacity-90"
+          className="rounded-full bg-ink px-5 py-2 text-[13px] font-medium text-paper transition-opacity hover:opacity-85"
         >
           Do it
         </button>
         <button
           type="button"
           onClick={() => onDecide(false)}
-          className="border-2 border-border px-4 py-2 text-[12px] font-extrabold uppercase tracking-[0.08em] transition-colors hover:border-accent hover:text-accent"
+          className="rounded-full border border-line px-5 py-2 text-[13px] font-medium text-soft transition-colors hover:border-ink/35 hover:text-ink"
         >
           Cancel
         </button>
@@ -467,12 +501,10 @@ function ConfirmCard({
 
 function ToolStatusIcon({ status }: { status: RunningTool["status"] }) {
   if (status === "running") {
-    return (
-      <span className="h-2 w-2 shrink-0 animate-pulse bg-accent" />
-    );
+    return <span className="dw-beat size-1.5 shrink-0 rounded-full bg-signal" />;
   }
   if (status === "DONE") {
-    return <span className="h-2 w-2 shrink-0 bg-online" />;
+    return <span className="size-1.5 shrink-0 rounded-full bg-signal" />;
   }
-  return <span className="h-2 w-2 shrink-0 bg-danger" />;
+  return <span className="size-1.5 shrink-0 rounded-full bg-danger" />;
 }

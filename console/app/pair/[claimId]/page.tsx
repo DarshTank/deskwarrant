@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PairApproval } from "@/components/PairApproval";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { auth } from "@/lib/auth";
 
 export const metadata = { title: "Pair a PC · DeskWarrant" };
@@ -25,7 +26,10 @@ export default async function PairPage({
   }
 
   return (
-    <main className="min-h-dvh px-5 py-14">
+    <main className="relative min-h-dvh overflow-hidden px-[clamp(20px,5vw,48px)] py-10 sm:py-16">
+      <div className="absolute top-6 right-[clamp(20px,5vw,48px)]">
+        <ThemeToggle className="p-1.5" />
+      </div>
       <PairApproval claimId={claimId} />
     </main>
   );
