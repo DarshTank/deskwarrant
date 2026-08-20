@@ -21,7 +21,7 @@ xxhash==3.5.0
 # stack it replaced (av, pylibsrtp, cryptography).
 aiohttp==3.11.11
 
-# --- volume control (set_volume tool) ---
+# --- volume control (get_volume, set_volume, set_mute) ---
 # pycaw drives the Windows Core Audio API; comtypes is its COM binding and is
 # also used by uiautomation.
 pycaw==20240210

@@ -38,6 +38,14 @@ hidden_imports = [
     "comtypes.stream",
     "pycaw",
     "pycaw.pycaw",
+    # tools/apps.py resolves .lnk targets through IShellLink, imported inside
+    # the function that needs it. "win32com.shell" is really win32comext.shell
+    # wearing an alias, which PyInstaller does not follow from the import
+    # graph. Without these, list_apps and launch_app return an empty catalogue
+    # in the frozen build while working perfectly in a source checkout -- the
+    # worst kind of packaging bug, because it never shows up in development.
+    "win32com.shell",
+    "win32com.shell.shell",
     # Tray backend is selected at runtime.
     "pystray._win32",
     # Both are imported inside functions so an agent that never pairs does not
