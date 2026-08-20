@@ -187,14 +187,30 @@ class ViewServer:
 
     def _handle_client_message(self, payload: dict[str, Any]) -> None:
         if payload.get("t") == "c":
-            if payload.get("e") == "keyframe":
+            event = payload.get("e")
+            if event == "keyframe":
                 self._force_keyframe = True
                 self._encoder.reset()
+            elif event == "quality":
+                self._request_quality(payload.get("q"))
             return
         try:
             self._injector.handle(payload)
         except Exception:  # noqa: BLE001
             log.exception("Input injection failed")
+
+    def _request_quality(self, requested: Any) -> None:
+        """Honour a viewer's quality request. Fullscreen asks for more.
+
+        Backpressure still has the last word: if the link cannot carry the
+        higher quality, the very next congested tick steps it back down. That
+        makes an over-optimistic request self-correcting rather than fatal.
+        """
+        if isinstance(requested, bool) or not isinstance(requested, (int, float)):
+            return
+        if self._encoder.set_quality(int(requested)):
+            self._force_keyframe = True
+            log.info("Viewer requested WebP quality %d", self._encoder.quality)
 
     def _release_keys(self) -> None:
         try:
@@ -207,7 +223,12 @@ class ViewServer:
     def _grab_and_encode(self, force_full: bool) -> bytes | None:
         if self._grabber is None:
             self._grabber = ScreenGrabber(self._config.monitor_index)
-        return self._encoder.encode(self._grabber.grab(), force_full=force_full)
+        # Grabbed before the image so the reported pointer never leads the
+        # pixels it is drawn over by a whole frame.
+        cursor = self._grabber.cursor()
+        return self._encoder.encode(
+            self._grabber.grab(), force_full=force_full, cursor=cursor
+        )
 
     async def _capture_loop(
         self, socket: web.WebSocketResponse, request: web.Request

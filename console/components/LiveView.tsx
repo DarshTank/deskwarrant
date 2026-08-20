@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { api } from "@/lib/client-api";
 
 /** Header of a frame message (build plan §5 wire format, unchanged). */
@@ -10,8 +16,22 @@ interface FrameHeader {
   w: number;
   h: number;
   full: boolean;
+  /** Pointer position, normalised to the captured monitor. Absent when the
+   *  cursor is on another display. */
+  cx?: number;
+  cy?: number;
   tiles: { x: number; y: number; w: number; h: number; len: number }[];
 }
+
+/** Neither of these is in every lib.dom we build against, and both are absent
+ *  at runtime outside Chromium, so they are typed narrowly and called through
+ *  optional chaining rather than assumed. */
+type NavigatorWithKeyboard = Navigator & {
+  keyboard?: { lock?: () => Promise<void>; unlock?: () => void };
+};
+type NavigatorWithWakeLock = Navigator & {
+  wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+};
 
 interface ViewStatus {
   active: boolean;
@@ -23,6 +43,9 @@ interface ViewStatus {
 }
 
 type Phase = "idle" | "starting" | "connecting" | "live" | "failed" | "closed";
+/** Quarter turns clockwise. The PC never learns about this -- rotation is
+ *  purely how the browser presents the frames it already receives. */
+type Rotation = 0 | 90 | 180 | 270;
 
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const STATUS_POLL_INTERVAL_MS = 700;
@@ -30,6 +53,14 @@ const STATUS_POLL_INTERVAL_MS = 700;
 const TUNNEL_TIMEOUT_MS = 30_000;
 /** Same rule as the DataChannel had — only the property name changed. */
 const BUFFER_HIGH_WATER_BYTES = 1_000_000;
+/**
+ * WebP quality requested per mode. Fullscreen scales the picture up, so the
+ * artefacts that were invisible in a small window land on text and become the
+ * first thing you notice. The agent clamps this and backpressure can still
+ * override it downward, so asking high is safe.
+ */
+const QUALITY_WINDOWED = 70;
+const QUALITY_FULLSCREEN = 88;
 
 export function LiveView({
   deviceId,
@@ -41,6 +72,11 @@ export function LiveView({
   interactive?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cursorRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  // The unrotated box the rotated wrapper is centred in, and the only
+  // rectangle pointer maths may be done against.
+  const stageInnerRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const stoppedRef = useRef(false);
   const startedRef = useRef(false);
@@ -49,6 +85,12 @@ export function LiveView({
   const [detail, setDetail] = useState<string>("Not connected");
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({ fps: 0, kbps: 0, seq: 0 });
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
+  // iOS Safari implements the Fullscreen API on <video> only, so on iPhone the
+  // CSS fallback is not a nicety -- it is the only path there is.
+  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
+  const [rotation, setRotation] = useState<Rotation>(0);
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
 
   // `since: 0` rather than Date.now(): reading the clock during render is an
   // impure call, and the first frame initialises the window anyway.
@@ -101,6 +143,7 @@ export function LiveView({
     }
 
     await Promise.all(decodes);
+    drawCursor(cursorRef.current, header);
 
     const counter = frameCounter.current;
     if (counter.since === 0) counter.since = Date.now();
@@ -127,6 +170,9 @@ export function LiveView({
     socketRef.current = null;
     setPhase("closed");
     setDetail("Disconnected");
+    // Cleared here, in the handler, so a later reconnect starts windowed rather
+    // than silently reopening full-screen.
+    setPseudoFullscreen(false);
 
     if (!startedRef.current) return;
     startedRef.current = false;
@@ -283,25 +329,192 @@ export function LiveView({
    * The canvas is almost never the same size as the remote display, so sending
    * raw pixels would be wrong on every device.
    */
-  const toNormalised = useCallback((e: { clientX: number; clientY: number }) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return null;
-    return {
-      x: clamp01((e.clientX - rect.left) / rect.width),
-      y: clamp01((e.clientY - rect.top) / rect.height),
-    };
-  }, []);
+  const toNormalised = useCallback(
+    (e: { clientX: number; clientY: number }) => {
+      const container = stageInnerRef.current;
+      const canvas = canvasRef.current;
+      if (!container || !canvas) return null;
+      if (canvas.width === 0 || canvas.height === 0) return null;
+
+      // Measured on the UNROTATED container. getBoundingClientRect on the
+      // rotated wrapper returns its axis-aligned bounding box, which at 90 and
+      // 270 degrees is a different rectangle from the one the image sits in.
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return null;
+
+      const [rx, ry] = unrotate(
+        (e.clientX - rect.left) / rect.width,
+        (e.clientY - rect.top) / rect.height,
+        rotation,
+      );
+
+      // Past the un-rotation, the wrapper's own box is what the image was
+      // fitted into, and at 90/270 that box is the container with its
+      // dimensions swapped.
+      const turned = rotation === 90 || rotation === 270;
+      const boxW = turned ? rect.height : rect.width;
+      const boxH = turned ? rect.width : rect.height;
+
+      // object-contain letterboxes the bitmap inside that box, so the box and
+      // the visible image are different rectangles. Mapping against the box
+      // skews every coordinate by the width of the bars -- unnoticeable while
+      // the panel happens to match the PC's aspect ratio, and glaring in
+      // fullscreen on a phone, where it never does.
+      const scale = Math.min(boxW / canvas.width, boxH / canvas.height);
+      const shownW = canvas.width * scale;
+      const shownH = canvas.height * scale;
+
+      return {
+        x: clamp01((rx * boxW - (boxW - shownW) / 2) / shownW),
+        y: clamp01((ry * boxH - (boxH - shownH) / 2) / shownH),
+      };
+    },
+    [rotation],
+  );
 
   const live = phase === "live";
+  // Gated on `live` rather than cleared by an effect when the stream dies:
+  // deriving it means no death path can strand the viewer full-screen on a
+  // black rectangle, and no setState cascades out of a render.
+  const fullscreen = (nativeFullscreen || pseudoFullscreen) && live;
+  const turned = rotation === 90 || rotation === 270;
+
+  // Subscribed to rather than measured inline: ResizeObserver delivers the
+  // first size in its own callback, so no setState happens during the effect.
+  useEffect(() => {
+    const el = stageInnerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect;
+      setStageSize((prev) =>
+        prev.w === box.width && prev.h === box.height
+          ? prev
+          : { w: box.width, h: box.height },
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  /**
+   * A quarter-turned view is sized with the container's dimensions swapped and
+   * then rotated about its centre, so the turned box lands back exactly on the
+   * container. That cannot be expressed in CSS alone inside a flex parent,
+   * hence the measurement above. Before the first measurement it falls back to
+   * filling the container, which is already correct at 0 degrees.
+   */
+  const stageMeasured = stageSize.w > 0 && stageSize.h > 0;
+  const wrapperStyle: CSSProperties = stageMeasured
+    ? {
+        width: turned ? stageSize.h : stageSize.w,
+        height: turned ? stageSize.w : stageSize.h,
+        left: "50%",
+        top: "50%",
+        transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+      }
+    : { width: "100%", height: "100%", left: 0, top: 0 };
+
+  const rotate = useCallback(
+    () => setRotation((r) => (((r + 90) % 360) as Rotation)),
+    [],
+  );
+
+  // ---------- Fullscreen ----------
+
+  const enterFullscreen = useCallback(async () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (typeof stage.requestFullscreen !== "function") {
+      setPseudoFullscreen(true);
+      return;
+    }
+    try {
+      await stage.requestFullscreen({ navigationUI: "hide" });
+    } catch {
+      // Permission-policy blocked, or an iPad pretending to be a desktop.
+      setPseudoFullscreen(true);
+    }
+  }, []);
+
+  const exitFullscreen = useCallback(async () => {
+    setPseudoFullscreen(false);
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        /* already gone */
+      }
+    }
+  }, []);
+
+  // The browser can leave fullscreen without us -- Esc, F11, the OS -- so the
+  // flag is derived from the event, never from the call that requested it.
+  useEffect(() => {
+    const onChange = () => setNativeFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  // The browser's own fullscreen has to be released explicitly. This touches
+  // only the external API -- the React flag above is already derived.
+  useEffect(() => {
+    if (live || !document.fullscreenElement) return;
+    void document.exitFullscreen().catch(() => {});
+  }, [live]);
+
+  useEffect(() => {
+    if (!live) return;
+    sendInput({
+      t: "c",
+      e: "quality",
+      q: fullscreen ? QUALITY_FULLSCREEN : QUALITY_WINDOWED,
+    });
+  }, [fullscreen, live, sendInput]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+
+    // Keyboard Lock exists for exactly this case: without it Ctrl+W closes the
+    // browser tab instead of the window on the PC. Chromium-only, and harmless
+    // where it is missing. Esc becomes ours too, so the browser switches to
+    // hold-Esc to leave -- which is why the on-screen exit control stays.
+    const keyboard = (navigator as NavigatorWithKeyboard).keyboard;
+    void keyboard?.lock?.().catch(() => {});
+
+    // A phone dimming mid-session is the most common way a remote session dies.
+    let sentinel: { release: () => Promise<void> } | null = null;
+    let released = false;
+    void (navigator as NavigatorWithWakeLock).wakeLock
+      ?.request("screen")
+      .then((s) => {
+        if (released) void s.release().catch(() => {});
+        else sentinel = s;
+      })
+      .catch(() => {});
+
+    // Landscape only works while actually fullscreen, and throws on desktop and
+    // iOS. The attempt is free and the failure is expected.
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (o: string) => Promise<void>;
+    };
+    void orientation?.lock?.("landscape").catch(() => {});
+
+    return () => {
+      keyboard?.unlock?.();
+      released = true;
+      void sentinel?.release().catch(() => {});
+      void orientation?.unlock?.();
+    };
+  }, [fullscreen]);
 
   useEffect(() => {
     if (!interactive || !live) return;
 
     const onKey = (e: KeyboardEvent) => {
-      // Only capture when the canvas has focus, so the chat box still types.
-      if (document.activeElement !== canvasRef.current) return;
+      // Windowed, keys only count while the canvas has focus, so the chat box
+      // still types. Fullscreen there is nothing else to type into, and the
+      // focus check would silently eat keys any time the browser moved focus.
+      if (!fullscreen && document.activeElement !== canvasRef.current) return;
       e.preventDefault();
       sendInput({
         t: "k",
@@ -321,7 +534,7 @@ export function LiveView({
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
     };
-  }, [interactive, live, sendInput]);
+  }, [interactive, live, sendInput, fullscreen]);
 
   const busy = phase === "starting" || phase === "connecting";
 
@@ -351,6 +564,27 @@ export function LiveView({
         )}
 
         <div className="ml-auto flex shrink-0 gap-2">
+          {live && (
+            <button
+              type="button"
+              onClick={rotate}
+              title="Turn the view a quarter turn clockwise"
+              className="rounded-full px-3 py-1.5 text-[13px] text-soft tabular-nums transition-colors hover:bg-ink/[0.05] hover:text-ink"
+            >
+              {rotation === 0 ? "Rotate" : `${rotation}°`}
+            </button>
+          )}
+          {live && (
+            <button
+              type="button"
+              onClick={() =>
+                void (fullscreen ? exitFullscreen() : enterFullscreen())
+              }
+              className="rounded-full px-3 py-1.5 text-[13px] text-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
+            >
+              Full screen
+            </button>
+          )}
           {live && (
             <button
               type="button"
@@ -404,36 +638,94 @@ export function LiveView({
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1 bg-[#0b0b0d] p-[clamp(6px,1.5vw,12px)]">
-        <canvas
-          ref={canvasRef}
-          tabIndex={0}
-          className={`h-full w-full rounded-xl object-contain outline-none transition-opacity duration-500 focus-visible:ring-2 focus-visible:ring-signal ${
-            live ? "opacity-100" : "opacity-0"
-          }`}
-          onPointerMove={(e) => {
-            if (!interactive || !live) return;
-            const p = toNormalised(e);
-            if (p) sendInput({ t: "m", e: "move", ...p });
-          }}
-          onPointerDown={(e) => {
-            if (!interactive || !live) return;
-            canvasRef.current?.focus();
-            const p = toNormalised(e);
-            if (p) sendInput({ t: "m", e: "down", ...p, b: e.button });
-          }}
-          onPointerUp={(e) => {
-            if (!interactive || !live) return;
-            const p = toNormalised(e);
-            if (p) sendInput({ t: "m", e: "up", ...p, b: e.button });
-          }}
-          onWheel={(e) => {
-            if (!interactive || !live) return;
-            const p = toNormalised(e);
-            if (p) sendInput({ t: "m", e: "wheel", ...p, d: e.deltaY });
-          }}
-          onContextMenu={(e) => e.preventDefault()}
-        />
+      <div
+        ref={stageRef}
+        className={`relative min-h-0 flex-1 bg-[#0b0b0d] ${
+          fullscreen ? "p-0" : "p-[clamp(6px,1.5vw,12px)]"
+        } ${pseudoFullscreen ? "fixed inset-0 z-50" : ""}`}
+      >
+        {/* Both canvases are absolutely stacked at the same size with the same
+            object-contain, so the pointer layer letterboxes identically to the
+            picture without any offset arithmetic -- and both turn together,
+            because rotation is applied to the wrapper around the pair. */}
+        <div
+          ref={stageInnerRef}
+          className="relative h-full w-full overflow-hidden"
+        >
+          <div className="absolute" style={wrapperStyle}>
+          <canvas
+            ref={canvasRef}
+            tabIndex={0}
+            className={`absolute inset-0 h-full w-full object-contain outline-none transition-opacity duration-500 focus-visible:ring-2 focus-visible:ring-signal ${
+              fullscreen ? "" : "rounded-xl"
+            } ${fullscreen ? "cursor-none" : ""} ${
+              live ? "opacity-100" : "opacity-0"
+            }`}
+            onPointerMove={(e) => {
+              if (!interactive || !live) return;
+              const p = toNormalised(e);
+              if (p) sendInput({ t: "m", e: "move", ...p });
+            }}
+            onPointerDown={(e) => {
+              if (!interactive || !live) return;
+              canvasRef.current?.focus();
+              const p = toNormalised(e);
+              if (p) sendInput({ t: "m", e: "down", ...p, b: e.button });
+            }}
+            onPointerUp={(e) => {
+              if (!interactive || !live) return;
+              const p = toNormalised(e);
+              if (p) sendInput({ t: "m", e: "up", ...p, b: e.button });
+            }}
+            onWheel={(e) => {
+              if (!interactive || !live) return;
+              const p = toNormalised(e);
+              if (p) sendInput({ t: "m", e: "wheel", ...p, d: e.deltaY });
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+          />
+          <canvas
+            ref={cursorRef}
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 h-full w-full object-contain transition-opacity duration-500 ${
+              live ? "opacity-100" : "opacity-0"
+            }`}
+          />
+          </div>
+        </div>
+
+        {fullscreen && (
+          <div className="absolute right-4 top-4 flex items-center gap-2 opacity-30 transition-opacity duration-200 focus-within:opacity-100 hover:opacity-100">
+            <span className="hidden rounded-full bg-black/60 px-3 py-1.5 font-mono text-[11px] text-white/70 backdrop-blur sm:inline">
+              hold Esc to exit
+            </span>
+            <button
+              type="button"
+              onClick={rotate}
+              title="Turn the view a quarter turn clockwise"
+              className="rounded-full bg-black/60 px-3 py-1.5 text-[13px] tabular-nums text-white/90 backdrop-blur transition-colors hover:bg-black/80"
+            >
+              {rotation === 0 ? "Rotate" : `${rotation}°`}
+            </button>
+            <button
+              type="button"
+              onClick={() => void exitFullscreen()}
+              className="rounded-full bg-black/60 px-3 py-1.5 text-[13px] text-white/90 backdrop-blur transition-colors hover:bg-black/80"
+            >
+              Exit full screen
+            </button>
+          </div>
+        )}
+
+        {/* A landscape desktop inside a portrait phone is a letterboxed strip.
+            The orientation lock handles Android; iOS has to be asked. */}
+        {fullscreen && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-6 hidden justify-center portrait:flex">
+            <span className="rounded-full bg-black/60 px-4 py-2 text-[13px] text-white/80 backdrop-blur">
+              Rotate your device for a full-width view
+            </span>
+          </div>
+        )}
 
         {/* An empty black rectangle reads as a broken player. Until frames
             arrive, the stage says what it is waiting for. */}
@@ -504,6 +796,72 @@ function EyeGlyph({ busy }: { busy: boolean }) {
 }
 
 // ---------- helpers ----------
+
+/**
+ * Paint the remote pointer on its own canvas, stacked over the video canvas.
+ *
+ * It gets a separate layer because unchanged tiles are never redrawn: a pointer
+ * painted into the video canvas would leave a trail behind it everywhere the
+ * screen happened to be static, which is most of the screen most of the time.
+ */
+function drawCursor(overlay: HTMLCanvasElement | null, header: FrameHeader) {
+  if (!overlay) return;
+  if (overlay.width !== header.w || overlay.height !== header.h) {
+    overlay.width = header.w;
+    overlay.height = header.h;
+  }
+  const ctx = overlay.getContext("2d");
+  if (!ctx) return;
+
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (typeof header.cx !== "number" || typeof header.cy !== "number") return;
+
+  const x = header.cx * header.w;
+  const y = header.cy * header.h;
+  const s = 20;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, s);
+  ctx.lineTo(s * 0.28, s * 0.75);
+  ctx.lineTo(s * 0.46, s * 1.14);
+  ctx.lineTo(s * 0.63, s * 1.06);
+  ctx.lineTo(s * 0.45, s * 0.68);
+  ctx.lineTo(s * 0.73, s * 0.64);
+  ctx.closePath();
+  // Outlined in black and filled white, the same way every OS draws it, so it
+  // stays legible over both a dark terminal and a white document.
+  ctx.strokeStyle = "rgba(0,0,0,0.8)";
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Map a point in the displayed (rotated) box back onto the unrotated image.
+ *
+ * Forward, a quarter turn clockwise sends source (sx, sy) to (1 - sy, sx).
+ * These are the inverses of that, applied before any letterbox correction --
+ * without them a rotated view still renders correctly but every click lands
+ * somewhere else on the PC, which is worse than not offering rotation at all.
+ */
+function unrotate(nx: number, ny: number, rotation: Rotation): [number, number] {
+  switch (rotation) {
+    case 90:
+      return [ny, 1 - nx];
+    case 180:
+      return [1 - nx, 1 - ny];
+    case 270:
+      return [1 - ny, nx];
+    default:
+      return [nx, ny];
+  }
+}
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
