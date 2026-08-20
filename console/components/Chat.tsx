@@ -330,7 +330,7 @@ export function Chat({
       </div>
 
       <div className="shrink-0 border-t border-line p-[clamp(10px,2.5vw,16px)]">
-        <div className="flex items-end gap-2 rounded-3xl border border-line bg-raised py-1.5 pr-1.5 pl-4 transition-colors focus-within:border-signal">
+        <div className="flex items-end gap-2 rounded-3xl border border-line bg-raised py-1.5 pr-1.5 pl-4 transition-colors focus-within:border-soft">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -345,7 +345,7 @@ export function Chat({
               online ? "Is my download finished?" : "This PC is offline"
             }
             aria-label="Message"
-            className="thin-scroll max-h-32 min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[15px] text-ink outline-none placeholder:text-faint"
+            className="thin-scroll max-h-32 min-h-[38px] flex-1 resize-none border-0 bg-transparent py-2 text-[15px] text-ink outline-none focus:outline-none focus:ring-0 focus-visible:outline-none placeholder:text-faint"
           />
           <button
             type="button"

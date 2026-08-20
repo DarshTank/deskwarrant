@@ -235,7 +235,7 @@ export function Notice({
 /* -------------------------------------------------------------------------- */
 
 export const inputClass =
-  "w-full rounded-full border border-line bg-paper px-4 py-2.5 text-[14px] text-ink outline-none transition-colors placeholder:text-faint focus:border-signal";
+  "w-full rounded-full border border-line bg-paper px-4 py-2.5 text-[14px] text-ink outline-none transition-colors placeholder:text-faint focus:border-soft";
 
 export function Field({
   label,
