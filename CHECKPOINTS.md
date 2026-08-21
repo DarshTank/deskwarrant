@@ -5,7 +5,7 @@ every stage. **Run these in order.** If one fails, fix it before moving on — a
 later stage failing for an earlier stage's reason is very hard to diagnose.
 
 Everything below needs credentials in `console/.env`. Nothing here can be
-verified without a real Neon database, Google OAuth client, and Groq key.
+verified without a real Supabase database, Google OAuth client, and Groq key.
 
 ---
 
@@ -42,7 +42,7 @@ reachable.
 
 1. Visit `http://localhost:3000` → redirected to `/signin`.
 2. Sign in with Google → land on an empty `/devices` dashboard.
-3. Confirm a `User` row exists in Neon:
+3. Confirm a `User` row exists in Supabase:
    ```bash
    cd console && npx prisma studio
    ```

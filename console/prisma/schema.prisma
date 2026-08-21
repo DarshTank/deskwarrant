@@ -1,6 +1,8 @@
 // DeskWarrant — data model (build plan §6)
-// DATABASE_URL must be Neon's POOLED endpoint (hostname contains "-pooler").
-// DIRECT_URL must be the direct endpoint; used by `prisma migrate` only.
+// DATABASE_URL must be Supabase's Supavisor TRANSACTION pooler (port 6543) with
+// `pgbouncer=true`; it is what every serverless function queries through.
+// DIRECT_URL must be a session-mode connection (port 5432), which `prisma
+// migrate` needs for advisory locks and transactional DDL.
 
 generator client {
   provider = "prisma-client-js"

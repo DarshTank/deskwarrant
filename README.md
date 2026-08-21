@@ -39,7 +39,7 @@ They are not written to the database and not retained anywhere.
 
 ```
 ┌────────────────┐         ┌──────────────────────────┐         ┌──────────────┐
-│  Browser       │         │  Console (Vercel)        │         │  Neon PG     │
+│  Browser       │         │  Console (Vercel)        │         │  Supabase PG │
 │  (any device)  │◄───────►│  - Next.js UI            │◄───────►│              │
 │                │  HTTPS  │  - API routes            │ Prisma  └──────────────┘
 │                │         │  - Assistant (Groq loop) │
@@ -113,10 +113,17 @@ deskwarrent/
 
 ## Setup
 
-You need five things, all free-tier: a **Neon** Postgres database, a **Google
-OAuth** client, a **Groq** API key, a **VAPID** key pair, and — for live view
-only — a **domain on Cloudflare's free plan**. No card is required for any of
-them.
+You need five things, all free-tier: a **Supabase** Postgres database, a
+**Google OAuth** client, a **Groq** API key, a **VAPID** key pair, and — for
+live view only — a **domain on Cloudflare's free plan**. No card is required for
+any of them.
+
+> **Why Supabase specifically.** The host agent polls every 2 seconds, so the
+> database is never idle. That rules out any free tier metered per operation or
+> per compute-hour — the agent exhausts a 100k-operation monthly quota in about
+> eleven hours of uptime, and a 100 CU-hour quota in about sixteen days.
+> Supabase bills a fixed always-on instance with no request meter, and its
+> seven-day inactivity pause can never trigger while an agent is running.
 
 ### 1. Console environment
 
@@ -127,8 +134,8 @@ cp .env.example .env      # then fill it in
 
 | Variable | Where it comes from |
 |---|---|
-| `DATABASE_URL` | Neon → **pooled** endpoint. Hostname **must** contain `-pooler`. |
-| `DIRECT_URL` | Neon → direct endpoint. Used by `prisma migrate` only. |
+| `DATABASE_URL` | Supabase → Connect → **Transaction pooler** (port `6543`). Must end with `?pgbouncer=true&connection_limit=1`. |
+| `DIRECT_URL` | Supabase → Connect → **Session pooler** (port `5432`). Used by `prisma migrate` only. |
 | `AUTH_SECRET` | `npx auth secret` |
 | `AUTH_URL` | `http://localhost:3000`, or your Vercel URL in production |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google Cloud Console → Credentials → OAuth 2.0 Client (Web). Authorized redirect URI must be `<AUTH_URL>/api/auth/callback/google` |
@@ -137,17 +144,34 @@ cp .env.example .env      # then fill it in
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Same value as `VAPID_PUBLIC_KEY` |
 
 > **The two database URLs are not interchangeable.** Prisma on Vercel needs the
-> pooled endpoint at runtime and the direct endpoint for migrations. Getting this
-> wrong causes intermittent connection failures under serverless load — a failure
-> mode that looks like flakiness rather than misconfiguration.
+> transaction pooler at runtime and a session-mode connection for migrations.
+> Getting this wrong causes intermittent connection failures under serverless
+> load — a failure mode that looks like flakiness rather than misconfiguration.
+>
+> Two Supabase-specific traps live here:
+>
+> - **`pgbouncer=true` is mandatory on `DATABASE_URL`.** Transaction mode cannot
+>   hold prepared statements, which Prisma creates by default. Omit the flag and
+>   you get sporadic `prepared statement "s0" already exists` errors that only
+>   appear under concurrency.
+> - **Use the *session pooler* for `DIRECT_URL`, not the raw direct host.** The
+>   raw host (`db.PROJECTREF.supabase.co:5432`) is IPv6-only unless you buy the
+>   IPv4 add-on, so `prisma migrate` fails with `ENETUNREACH` on most laptops and
+>   CI runners. The session pooler resolves over IPv4 and behaves identically for
+>   migrations.
 
 Then:
 
 ```bash
 npm install
-npx prisma migrate dev --name init    # creates the schema in Neon
+npx prisma migrate deploy    # applies the existing migrations to Supabase
 npm run dev
 ```
+
+`migrate deploy` replays the committed migrations in `prisma/migrations/`. Use
+`migrate dev` only when you are changing the schema — against a fresh Supabase
+project it would try to author a new migration rather than apply the five that
+already exist.
 
 ### 2. Host agent
 
