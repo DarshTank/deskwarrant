@@ -16,6 +16,7 @@ import asyncio
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -299,10 +300,49 @@ class TunnelSupervisor:
 
                 await asyncio.sleep(HEALTH_POLL_INTERVAL_S)
 
-        raise TunnelError(
-            f"The tunnel did not come up within {STARTUP_TIMEOUT_S:.0f}s "
-            f"({last_detail}). Check the tunnel's DNS route."
+        raise TunnelError(await self._explain_health_failure(last_detail))
+
+    async def _explain_health_failure(self, last_detail: str) -> str:
+        """Turn the last probe failure into something the user can act on.
+
+        Worth the extra lookup because the obvious reading of a failed probe is
+        the wrong one. httpx reports a name-resolution failure as ConnectError,
+        the same class it uses for a refused socket -- so the tunnel looks
+        broken when the actual fault is that THIS PC cannot resolve the
+        hostname. That happens routinely: the console creates the DNS record
+        during pairing and the agent probes it seconds later, so any resolver in
+        the path that caches the NXDOMAIN keeps serving it for the negative TTL,
+        long after the record is live everywhere else.
+
+        Blaming the tunnel there sends the user to the Cloudflare dashboard to
+        look at a record that was correct the whole time.
+        """
+        host = self.hostname or ""
+        base = f"The tunnel did not come up within {STARTUP_TIMEOUT_S:.0f}s"
+
+        if not await self._resolves(host):
+            return (
+                f"{base}: this PC cannot resolve {host}. The DNS record exists "
+                f"but your resolver is not returning it -- usually a cached "
+                f"'no such name' from before the PC was paired. Flush your DNS "
+                f"cache, or set this PC's DNS to 1.1.1.1, and try again."
+            )
+
+        return (
+            f"{base} ({last_detail}). The hostname resolves, so the tunnel or "
+            f"its ingress rule is the likely fault."
         )
+
+    @staticmethod
+    async def _resolves(host: str) -> bool:
+        if not host:
+            return False
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        except (OSError, socket.gaierror):
+            return False
+        return True
 
     def _fail(self, message: str) -> None:
         log.error("Tunnel failed: %s", message)
