@@ -39,6 +39,13 @@ function describeModelError(err: unknown): string {
   if (status === 429) {
     return "The assistant is rate limited right now. Wait a moment and try again.";
   }
+  // 413 is a size rejection, not a pace one: the request exceeded the account's
+  // whole per-minute token allowance, so waiting changes nothing and "try
+  // again" is actively misleading advice. Starting a new chat drops the history
+  // that made it oversized, which is the one thing that does help.
+  if (status === 413) {
+    return "That conversation grew too large for the assistant's token limit. Start a new chat to continue.";
+  }
   if (isToolUseFailure(err)) {
     return "The model kept returning a malformed tool call. Try asking again, or rephrase the question.";
   }
@@ -49,9 +56,42 @@ const JOB_TIMEOUT_MS = 20_000;
 const JOB_POLL_INTERVAL_MS = 500;
 /** Jobs expire if the agent never collects them. */
 const JOB_TTL_MS = 60_000;
-/** Cap tool output fed back to the model, to bound token spend. */
-const MAX_TOOL_RESULT_CHARS = 6_000;
+/**
+ * Cap tool output fed back to the model, to bound token spend.
+ *
+ * Tapered by age. A directory listing serialises to ~11k characters, and the
+ * model only ever reasons about the newest one -- older results are context it
+ * has already used. Sending them all at full width is what pushed a routine
+ * turn past the account's entire per-minute token budget, so stale results are
+ * trimmed hard while the live one stays wide enough to answer from.
+ */
+const MAX_TOOL_RESULT_CHARS = 4_000;
+const MAX_STALE_TOOL_RESULT_CHARS = 600;
 const HISTORY_LIMIT = 20;
+
+/**
+ * Prompt budget, in tokens.
+ *
+ * Groq's on-demand tier meters tokens per minute and counts `max_tokens`
+ * against the same allowance as the prompt, so a single oversized request is
+ * rejected outright with 413 -- not throttled, not retried into success. It
+ * fails identically whether the user is chatting fast or typing "Hello" into an
+ * idle window, which is exactly what made it look like an outage.
+ *
+ * The system prompt and tool schemas are measured at call time rather than
+ * guessed at, because both grow whenever a tool is added and a stale constant
+ * here would silently reintroduce the same failure.
+ */
+const MODEL_TPM_BUDGET = 8_000;
+const RESPONSE_TOKEN_BUDGET = 1_024; // Must track `max_tokens` below.
+const BUDGET_SAFETY_MARGIN = 400; // Chat framing the estimator cannot see.
+/** Floor, so a large tool catalogue can never starve history to nothing. */
+const MIN_HISTORY_TOKEN_BUDGET = 512;
+
+/** Cheap heuristic: ~4 characters per token. No tokeniser dependency. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
 
 // ---------- SSE event contract (consumed by components/Chat.tsx) ----------
 
@@ -118,6 +158,16 @@ type GroqMessage = Groq.Chat.Completions.ChatCompletionMessageParam;
 function toGroqMessages(rows: Message[]): GroqMessage[] {
   const out: GroqMessage[] = [];
 
+  // Only the final tool exchange is rendered at full width; see
+  // MAX_TOOL_RESULT_CHARS for why the rest are collapsed.
+  let lastToolIndex = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].role === "TOOL") {
+      lastToolIndex = i;
+      break;
+    }
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
 
@@ -152,12 +202,13 @@ function toGroqMessages(rows: Message[]): GroqMessage[] {
         })),
       });
 
+      const isLiveExchange = i + 1 === lastToolIndex;
       for (const call of calls) {
         const result = results.find((r) => r.id === call.id);
         out.push({
           role: "tool",
           tool_call_id: call.id,
-          content: renderToolResult(result),
+          content: renderToolResult(result, isLiveExchange),
         });
       }
       i++; // the TOOL row was consumed above
@@ -171,19 +222,27 @@ function toGroqMessages(rows: Message[]): GroqMessage[] {
   return out;
 }
 
-function renderToolResult(result: PersistedToolResult | undefined): string {
+function renderToolResult(
+  result: PersistedToolResult | undefined,
+  isLiveExchange = true,
+): string {
+  const limit = isLiveExchange
+    ? MAX_TOOL_RESULT_CHARS
+    : MAX_STALE_TOOL_RESULT_CHARS;
   if (!result) return JSON.stringify({ error: "No result recorded." });
   if (result.status === "DONE") {
-    return truncate(JSON.stringify(result.result ?? null));
+    return truncate(JSON.stringify(result.result ?? null), limit);
   }
+  // Errors are short and are the whole point of the row, so never taper them.
   return truncate(
     JSON.stringify({ error: result.error ?? `Tool ${result.status}.` }),
+    MAX_TOOL_RESULT_CHARS,
   );
 }
 
-function truncate(text: string): string {
-  if (text.length <= MAX_TOOL_RESULT_CHARS) return text;
-  return `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n…[truncated]`;
+function truncate(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}\n…[truncated]`;
 }
 
 // ---------- Job dispatch and collection ----------
@@ -339,6 +398,26 @@ export async function runAssistantTurn(opts: RunTurnOptions): Promise<void> {
     osVersion: device.osVersion,
   });
 
+  // Whatever the fixed prompt does not spend is what history may use. Both
+  // halves are measured here rather than assumed, so adding a tool narrows the
+  // history window automatically instead of silently overflowing the request.
+  const fixedTokens =
+    estimateTokens(system) + estimateTokens(JSON.stringify(tools));
+  const historyTokenBudget = Math.max(
+    MIN_HISTORY_TOKEN_BUDGET,
+    MODEL_TPM_BUDGET - RESPONSE_TOKEN_BUDGET - BUDGET_SAFETY_MARGIN - fixedTokens,
+  );
+  if (
+    MODEL_TPM_BUDGET - RESPONSE_TOKEN_BUDGET - BUDGET_SAFETY_MARGIN - fixedTokens <
+    MIN_HISTORY_TOKEN_BUDGET
+  ) {
+    console.warn(
+      `[assistant] system prompt and tool schemas alone are ~${fixedTokens} tokens, ` +
+        `leaving less than ${MIN_HISTORY_TOKEN_BUDGET} for history against a ` +
+        `${MODEL_TPM_BUDGET} budget. Trim the tool catalogue or raise the tier.`,
+    );
+  }
+
   /**
    * One model call, retrying a malformed tool call.
    *
@@ -383,7 +462,7 @@ export async function runAssistantTurn(opts: RunTurnOptions): Promise<void> {
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     if (opts.signal?.aborted) return;
 
-    const history = await loadHistory(conversationId);
+    const history = await loadHistory(conversationId, historyTokenBudget);
     const isFinalIteration = iteration === MAX_ITERATIONS - 1;
 
     emit({ type: "status", text: iteration === 0 ? "Thinking" : "Reading results" });
@@ -589,7 +668,10 @@ export async function runAssistantTurn(opts: RunTurnOptions): Promise<void> {
   emit({ type: "done" });
 }
 
-async function loadHistory(conversationId: string): Promise<GroqMessage[]> {
+async function loadHistory(
+  conversationId: string,
+  tokenBudget: number,
+): Promise<GroqMessage[]> {
   // Newest-first, then reversed, so `take` keeps the MOST RECENT window. Taking
   // ascending would cap at the OLDEST rows, and any conversation longer than
   // the cap would feed the model stale context forever while its actual
@@ -615,7 +697,27 @@ async function loadHistory(conversationId: string): Promise<GroqMessage[]> {
   // Keep the tail, but never split an assistant/tool pair at the boundary.
   const tail = rows.slice(-HISTORY_LIMIT);
   while (tail.length > 0 && tail[0].role === "TOOL") tail.shift();
+
+  // Then drop from the front until the rendered history fits the budget. The
+  // count cap alone is not enough: twenty short messages and three folder
+  // listings differ by an order of magnitude, and it was the size that broke
+  // the request, not the number. Measuring the RENDERED form matters -- rows
+  // are stored untruncated, so the raw column is far larger than what is sent.
+  while (tail.length > 1 && renderedTokens(tail) > tokenBudget) {
+    tail.shift();
+    while (tail.length > 0 && tail[0].role === "TOOL") tail.shift();
+  }
+
   return toGroqMessages(tail);
+}
+
+/** Estimated tokens for what toGroqMessages will actually emit for `rows`. */
+function renderedTokens(rows: Message[]): number {
+  return toGroqMessages(rows).reduce((sum, m) => {
+    const content = typeof m.content === "string" ? m.content : "";
+    const calls = "tool_calls" in m ? JSON.stringify(m.tool_calls ?? "") : "";
+    return sum + estimateTokens(content) + estimateTokens(calls);
+  }, 0);
 }
 
 async function persistCallsAndResults(
