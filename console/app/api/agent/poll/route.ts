@@ -33,55 +33,65 @@ export async function GET(req: Request) {
 
     const now = new Date();
 
-    // Heartbeat.
-    await prisma.device.update({
-      where: { id: device.id },
-      data: { status: "ONLINE", lastSeenAt: now },
-    });
+    // Everything below that does not depend on another result travels in one
+    // batch. Prisma's array-form $transaction ships the whole array to Postgres
+    // as a single round trip, and round trips are what this route is actually
+    // spending its time on: the functions run in iad1 and the database is in
+    // ap-south-1, so each one costs real milliseconds. This poll used to make
+    // five to seven of them, every two seconds, per device.
+    //
+    // The candidate select is safe to batch alongside the expiry sweep even
+    // though it reads rows the sweep may retire: it filters on
+    // `expiresAt >= now` itself, so an expired row can never reach it whether
+    // or not the sweep has landed yet.
+    const [, , candidates, viewSession] = await prisma.$transaction([
+      // Heartbeat.
+      prisma.device.update({
+        where: { id: device.id },
+        data: { status: "ONLINE", lastSeenAt: now },
+      }),
+      // Sweep this device's stale work before handing out new work.
+      prisma.job.updateMany({
+        where: {
+          deviceId: device.id,
+          status: { in: ["PENDING", "AWAITING_CONFIRM"] },
+          expiresAt: { lt: now },
+        },
+        data: { status: "EXPIRED", completedAt: now },
+      }),
+      prisma.job.findMany({
+        where: {
+          deviceId: device.id,
+          status: "PENDING",
+          expiresAt: { gte: now },
+        },
+        orderBy: { createdAt: "asc" },
+        take: 20,
+        select: { id: true },
+      }),
+      // Live view. `active` is what starts and stops `cloudflared` on the PC,
+      // so a lapsed heartbeat here is what takes the machine back off the
+      // internet.
+      prisma.viewSession.findUnique({
+        where: { deviceId: device.id },
+        select: { id: true, lastHeartbeat: true, endedAt: true },
+      }),
+    ]);
 
-    // Sweep this device's stale work before handing out new work.
-    await prisma.job.updateMany({
-      where: {
-        deviceId: device.id,
-        status: { in: ["PENDING", "AWAITING_CONFIRM"] },
-        expiresAt: { lt: now },
-      },
-      data: { status: "EXPIRED", completedAt: now },
-    });
-
-    // Claim pending jobs atomically: select ids, then transition only the rows
-    // still PENDING. A second concurrent poll gets count 0 and no duplicates.
-    const candidates = await prisma.job.findMany({
-      where: { deviceId: device.id, status: "PENDING", expiresAt: { gte: now } },
-      orderBy: { createdAt: "asc" },
-      take: 20,
-      select: { id: true, toolName: true, args: true },
-    });
-
+    // Claim atomically with a single UPDATE ... RETURNING: only rows still
+    // PENDING are transitioned, and only the rows this statement transitioned
+    // come back. A concurrent poll gets the rest, never a duplicate. (The
+    // previous updateMany-then-reread pair needed two round trips to establish
+    // the same thing, and leaned on `dispatchedAt` equality to do it.)
     let jobs: { id: string; toolName: string; args: unknown }[] = [];
     if (candidates.length > 0) {
-      const ids = candidates.map((c) => c.id);
-      await prisma.job.updateMany({
-        where: { id: { in: ids }, status: "PENDING" },
+      jobs = await prisma.job.updateManyAndReturn({
+        where: { id: { in: candidates.map((c) => c.id) }, status: "PENDING" },
         data: { status: "DISPATCHED", dispatchedAt: now },
-      });
-      const claimed = await prisma.job.findMany({
-        where: { id: { in: ids }, status: "DISPATCHED", dispatchedAt: now },
         select: { id: true, toolName: true, args: true },
       });
-      jobs = claimed.map((j) => ({
-        id: j.id,
-        toolName: j.toolName,
-        args: j.args,
-      }));
     }
 
-    // Live view. `active` is what starts and stops `cloudflared` on the PC, so
-    // a lapsed heartbeat here is what takes the machine back off the internet.
-    const viewSession = await prisma.viewSession.findUnique({
-      where: { deviceId: device.id },
-      select: { id: true, lastHeartbeat: true, endedAt: true },
-    });
     const viewActive = isViewSessionAlive(viewSession);
 
     const payload: Record<string, unknown> = {
@@ -110,6 +120,10 @@ export async function GET(req: Request) {
       configVersion: device.configVersion,
     };
 
+    // Deliberately left as its own round trip rather than folded into the batch
+    // above: it fires only when the agent's configVersion has drifted, so
+    // batching it would run the query on every steady-state poll to save a
+    // round trip that almost never happens.
     if (agentConfigVersion !== device.configVersion) {
       const rules = await prisma.watchRule.findMany({
         where: { deviceId: device.id, enabled: true },

@@ -29,6 +29,38 @@ export function serverError(message = "Internal error") {
   return NextResponse.json({ error: message }, { status: 500 });
 }
 
+export function serviceUnavailable(message = "Service unavailable") {
+  return NextResponse.json({ error: message }, { status: 503 });
+}
+
+/**
+ * Prisma error codes that mean "the database was not reachable", as opposed to
+ * "the query was wrong". P2024 is the connection-pool timeout and is the one
+ * that actually shows up in production: it fires after `pool_timeout` (10s by
+ * default) when every pooled connection is busy.
+ *
+ * These deserve a 503, not a 500. The agent backs off on any 5xx
+ * (`transport.py`), so its behaviour is unchanged -- but a 503 in the logs says
+ * "infrastructure" instead of sending the next reader hunting for a code bug.
+ */
+const DB_UNREACHABLE_CODES = new Set([
+  "P2024", // Timed out fetching a new connection from the pool
+  "P1001", // Can't reach database server
+  "P1002", // Database server reached but timed out
+  "P1008", // Operation timed out
+  "P1017", // Server has closed the connection
+]);
+
+export function isDatabaseUnreachable(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    typeof (err as { code: unknown }).code === "string" &&
+    DB_UNREACHABLE_CODES.has((err as { code: string }).code)
+  );
+}
+
 /**
  * Thrown by helpers to unwind to a Response. Route handlers catch it via
  * `handleRoute`, keeping the happy path free of early-return plumbing.
@@ -75,6 +107,10 @@ export async function handleRoute(
     return await fn();
   } catch (err) {
     if (err instanceof HttpError) return err.response;
+    if (isDatabaseUnreachable(err)) {
+      console.error("[route error] database unreachable", err);
+      return serviceUnavailable("Database unavailable");
+    }
     console.error("[route error]", err);
     return serverError();
   }

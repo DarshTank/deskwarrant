@@ -1,7 +1,8 @@
 import type { Device, User } from "@prisma/client";
+import { cookies } from "next/headers";
 import { auth } from "./auth";
 import { prisma } from "./db";
-import { HttpError, notFound, unauthorized } from "./http";
+import { HttpError, notFound, serviceUnavailable, unauthorized } from "./http";
 import { hashToken } from "./tokens";
 
 /**
@@ -15,13 +16,51 @@ export function isDeviceOnline(lastSeenAt: Date | null | undefined): boolean {
   return Date.now() - lastSeenAt.getTime() < OFFLINE_AFTER_MS;
 }
 
-/** Console-facing: resolve the signed-in user or unwind with 401. */
+/** Auth.js writes `authjs.session-token`, prefixed `__Secure-` over HTTPS. */
+const SESSION_COOKIE = /(?:authjs|next-auth)\.session-token/;
+
+async function hasSessionCookie(): Promise<boolean> {
+  try {
+    const jar = await cookies();
+    return jar.getAll().some((c) => SESSION_COOKIE.test(c.name));
+  } catch {
+    return false; // Not in a request scope; treat as no cookie.
+  }
+}
+
+/**
+ * Console-facing: resolve the signed-in user, or unwind with 401 (no session)
+ * or 503 (the session could not be looked up).
+ *
+ * The 503 branch exists because Auth.js cannot tell us the difference. With
+ * `session.strategy = "database"` the session lives behind the Prisma adapter,
+ * and `@auth/core`'s session action wraps that lookup in a try/catch that
+ * merely logs the failure and returns an empty session. A database outage
+ * therefore arrives here looking exactly like a signed-out visitor, and every
+ * console route answers 401 -- which reads as an auth bug and sends whoever is
+ * on call to the wrong place entirely.
+ *
+ * So: if the caller presented a session cookie but no session resolved, ask the
+ * database whether it is actually there before blaming their credentials. The
+ * probe only runs on a path that was going to fail anyway, so the happy path
+ * still costs exactly one session lookup.
+ */
 export async function requireUser(): Promise<{ id: string; email: string }> {
   const session = await auth();
-  if (!session?.user?.id) {
-    throw new HttpError(unauthorized("Sign-in required"));
+  if (session?.user?.id) {
+    return { id: session.user.id, email: session.user.email ?? "" };
   }
-  return { id: session.user.id, email: session.user.email ?? "" };
+
+  if (await hasSessionCookie()) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch (err) {
+      console.error("[auth] session lookup failed; database unreachable", err);
+      throw new HttpError(serviceUnavailable("Database unavailable"));
+    }
+  }
+
+  throw new HttpError(unauthorized("Sign-in required"));
 }
 
 /**

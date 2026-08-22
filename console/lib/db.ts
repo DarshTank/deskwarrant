@@ -53,6 +53,20 @@ function checkDatabaseUrl(url: string | undefined): void {
         '\'prepared statement "s0" already exists\' errors under concurrency.',
     );
   }
+
+  // `connection_limit=1` is the classic serverless recipe, and on Vercel's
+  // Fluid compute it is a self-inflicted outage. Fluid runs many concurrent
+  // invocations inside ONE Node process, which shares the singleton below, so a
+  // pool of one serialises every request that instance is handling. Once the
+  // queue outlasts `pool_timeout` (10s by default), requests fail with P2024
+  // while the database itself is perfectly healthy.
+  if (parsed.searchParams.get("connection_limit") === "1") {
+    console.warn(
+      "[db] DATABASE_URL sets `connection_limit=1`. Vercel Fluid compute " +
+        "multiplexes concurrent requests through this one process, so a pool " +
+        "of 1 serialises them and the overflow fails with P2024. Prefer 5-10.",
+    );
+  }
 }
 
 checkDatabaseUrl(process.env.DATABASE_URL);
