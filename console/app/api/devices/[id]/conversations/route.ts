@@ -63,7 +63,13 @@ export async function GET(
     const messages = activeId
       ? await prisma.message.findMany({
           where: { conversationId: activeId },
-          orderBy: { createdAt: "asc" },
+          // `role` breaks the tie because an assistant/tool pair is written in
+          // one transaction and shares a `createdAt` to the millisecond, which
+          // leaves their order undefined on time alone -- a reloaded page could
+          // render tool results above the call that produced them. MessageRole
+          // is declared USER, ASSISTANT, TOOL and Postgres orders enums by
+          // declaration order, so ascending is already the order we want.
+          orderBy: [{ createdAt: "asc" }, { role: "asc" }],
           take: 200,
         })
       : [];

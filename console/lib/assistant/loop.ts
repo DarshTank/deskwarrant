@@ -590,11 +590,28 @@ export async function runAssistantTurn(opts: RunTurnOptions): Promise<void> {
 }
 
 async function loadHistory(conversationId: string): Promise<GroqMessage[]> {
+  // Newest-first, then reversed, so `take` keeps the MOST RECENT window. Taking
+  // ascending would cap at the OLDEST rows, and any conversation longer than
+  // the cap would feed the model stale context forever while its actual
+  // question scrolled off the end.
+  //
+  // `role` is the tiebreaker because an assistant/tool pair is written in one
+  // transaction, and Postgres stamps every row in a transaction with the same
+  // now() -- so the pair shares `createdAt` to the millisecond and `createdAt`
+  // alone leaves their order undefined. When the TOOL row sorted first,
+  // toGroqMessages found no results following the assistant row and dropped the
+  // completed call entirely (see its `fullyAnswered` guard), throwing away a
+  // tool result the turn had just waited seconds to get. MessageRole is
+  // declared USER, ASSISTANT, TOOL and Postgres orders enums by declaration
+  // order, so descending here puts TOOL before ASSISTANT before USER, and the
+  // reverse below restores the order the protocol requires.
   const rows = await prisma.message.findMany({
     where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ createdAt: "desc" }, { role: "desc" }],
     take: HISTORY_LIMIT * 2,
   });
+  rows.reverse();
+
   // Keep the tail, but never split an assistant/tool pair at the boundary.
   const tail = rows.slice(-HISTORY_LIMIT);
   while (tail.length > 0 && tail[0].role === "TOOL") tail.shift();
@@ -607,6 +624,16 @@ async function persistCallsAndResults(
   calls: PersistedToolCall[],
   results: PersistedToolResult[],
 ) {
+  // Stamp both rows explicitly, one millisecond apart. Left to the database
+  // these two would tie: Postgres evaluates now() once per transaction, so
+  // every row written here shares a `createdAt` and their relative order on
+  // read is undefined. The tool protocol requires the assistant's tool_calls to
+  // precede their results, so that ordering cannot be left to chance.
+  // loadHistory sorts defensively as well; this keeps new rows correct for any
+  // reader that sorts on time alone.
+  const assistantAt = new Date();
+  const toolAt = new Date(assistantAt.getTime() + 1);
+
   await prisma.$transaction([
     prisma.message.create({
       data: {
@@ -614,6 +641,7 @@ async function persistCallsAndResults(
         role: "ASSISTANT",
         content: assistantContent,
         toolCalls: calls as unknown as object,
+        createdAt: assistantAt,
       },
     }),
     prisma.message.create({
@@ -622,6 +650,7 @@ async function persistCallsAndResults(
         role: "TOOL",
         content: "",
         toolResults: results as unknown as object,
+        createdAt: toolAt,
       },
     }),
   ]);

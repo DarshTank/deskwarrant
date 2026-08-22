@@ -10,6 +10,23 @@ export const dynamic = "force-dynamic";
 
 const POLL_INTERVAL_MS = 2_000;
 
+/**
+ * Cadence while an assistant turn is in flight, and how long "in flight" lasts
+ * after the most recent job was created.
+ *
+ * A multi-step turn alternates model call -> job -> result -> model call, and
+ * the agent can only collect a job on its next poll. The agent already re-polls
+ * immediately after finishing work (agent/main.py), but that poll lands while
+ * the console is still waiting on the model, finds nothing, and commits to a
+ * full-length sleep -- so the *next* job sits idle for most of an interval. A
+ * measured turn spent 1.85s of its 18s exactly there.
+ *
+ * Only devices that ran a job in the last window poll fast, so an idle fleet is
+ * completely unaffected and the extra invocations are bounded by real activity.
+ */
+const ACTIVE_POLL_INTERVAL_MS = 600;
+const TURN_ACTIVE_WINDOW_MS = 15_000;
+
 /** Encoder defaults advertised to the agent, overridable in its own config. */
 const VIEW_TARGET_FPS = 10;
 const VIEW_TILE_SIZE = 128;
@@ -35,16 +52,17 @@ export async function GET(req: Request) {
 
     // Everything below that does not depend on another result travels in one
     // batch. Prisma's array-form $transaction ships the whole array to Postgres
-    // as a single round trip, and round trips are what this route is actually
-    // spending its time on: the functions run in iad1 and the database is in
-    // ap-south-1, so each one costs real milliseconds. This poll used to make
-    // five to seven of them, every two seconds, per device.
+    // as a single round trip, and round trips are what this route was actually
+    // spending its time on: it used to make five to seven of them, every two
+    // seconds, per device. Functions and the database now share a region
+    // (vercel.json pins bom1 to match ap-south-1 Supabase), so each is cheap --
+    // but this route runs often enough that the count still matters.
     //
     // The candidate select is safe to batch alongside the expiry sweep even
     // though it reads rows the sweep may retire: it filters on
     // `expiresAt >= now` itself, so an expired row can never reach it whether
     // or not the sweep has landed yet.
-    const [, , candidates, viewSession] = await prisma.$transaction([
+    const [, , candidates, viewSession, recentJob] = await prisma.$transaction([
       // Heartbeat.
       prisma.device.update({
         where: { id: device.id },
@@ -75,6 +93,16 @@ export async function GET(req: Request) {
       prisma.viewSession.findUnique({
         where: { deviceId: device.id },
         select: { id: true, lastHeartbeat: true, endedAt: true },
+      }),
+      // Recent job activity, in the same batch so it costs no extra round trip.
+      // Any status counts: the gap worth closing is the one *after* a job
+      // finishes, while the model decides what to call next.
+      prisma.job.findFirst({
+        where: {
+          deviceId: device.id,
+          createdAt: { gte: new Date(now.getTime() - TURN_ACTIVE_WINDOW_MS) },
+        },
+        select: { id: true },
       }),
     ]);
 
@@ -116,7 +144,7 @@ export async function GET(req: Request) {
         tileSize: VIEW_TILE_SIZE,
         quality: VIEW_WEBP_QUALITY,
       },
-      pollIntervalMs: POLL_INTERVAL_MS,
+      pollIntervalMs: recentJob ? ACTIVE_POLL_INTERVAL_MS : POLL_INTERVAL_MS,
       configVersion: device.configVersion,
     };
 
